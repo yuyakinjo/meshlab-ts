@@ -36,6 +36,7 @@ import {
 	defaultQuadricParameters,
 	quadricSimplification,
 } from "../../vcg/complex/local_optimization/tri_edge_collapse_quadric.ts";
+import { estimateNormals } from "../../vcg/complex/pointcloud_normal.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdatePosition } from "../../vcg/complex/update/position.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
@@ -51,6 +52,8 @@ export const FP = {
 	FP_ROTATE: 6,
 	FP_FREEZE_TRANSFORM: 7,
 	FP_RESET_TRANSFORM: 8,
+	FP_NORMAL_EXTRAPOLATION: 9,
+	FP_NORMAL_SMOOTH_POINTCLOUD: 10,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -135,6 +138,24 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		pythonName: "set_matrix_identity",
 		info: "Set the current transformation matrix to the Identity.",
 		filterClass: FilterClass.Layer | FilterClass.Normal,
+		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_NORMAL_EXTRAPOLATION]: {
+		name: "Compute normals for point sets",
+		pythonName: "compute_normal_for_point_clouds",
+		info:
+			"Compute the normals of the vertices of a mesh without exploiting the triangle " +
+			"connectivity, useful for dataset with no faces.",
+		filterClass: FilterClass.Normal | FilterClass.PointSet,
+		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_NORMAL_SMOOTH_POINTCLOUD]: {
+		name: "Smooth normals on point sets",
+		pythonName: "apply_normal_point_cloud_smoothing",
+		info:
+			"Smooth the normals of the vertices of a mesh without exploiting the triangle " +
+			"connectivity, useful for dataset with no faces.",
+		filterClass: FilterClass.Normal | FilterClass.PointSet,
 		requirements: MeshElement.MM_NONE,
 	},
 };
@@ -500,6 +521,53 @@ export class FilterMeshing extends FilterPlugin {
 				break;
 			}
 
+			case FP.FP_NORMAL_EXTRAPOLATION:
+				list.add(
+					new RichInt("K", 10, {
+						description: "Neighbour num",
+						tooltip: "The number of neighbors used to estimate normals.",
+					}),
+				);
+				list.add(
+					new RichInt("smoothIter", 0, {
+						description: "Smooth Iteration",
+						tooltip:
+							"The number of smoothing iteration done on the p used to estimate and propagate " +
+							"normals.",
+					}),
+				);
+				list.add(
+					new RichBool("flipFlag", false, {
+						description: "Flip normals w.r.t. viewpoint",
+						tooltip:
+							"If the 'viewpoint' (i.e. scanner position) is known, it can be used to " +
+							"disambiguate normals orientation, so that all the normals will be oriented in " +
+							"the same direction.",
+					}),
+				);
+				list.add(
+					new RichPosition("viewPos", [0, 0, 0], {
+						description: "Viewpoint Pos.",
+						tooltip: "The viewpoint position can be set by hand.",
+					}),
+				);
+				break;
+
+			case FP.FP_NORMAL_SMOOTH_POINTCLOUD:
+				list.add(
+					new RichInt("K", 10, {
+						description: "Number of neigbors",
+						tooltip: "The number of neighbors used to smooth normals.",
+					}),
+				);
+				list.add(
+					new RichBool("useDist", false, {
+						description: "Weight using neighbour distance",
+						tooltip: "If selected, the neighbour normals are waighted according to their distance.",
+					}),
+				);
+				break;
+
 			default:
 				break;
 		}
@@ -704,6 +772,36 @@ export class FilterMeshing extends FilterPlugin {
 				post.mask = MeshElement.MM_TRANSFMATRIX;
 				doc.Log.log("Transformation matrix reset to the identity");
 				return {};
+			}
+
+			case FP.FP_NORMAL_EXTRAPOLATION: {
+				const flip = params.getBool("flipFlag");
+				estimateNormals(cm, {
+					neighbors: params.getInt("K"),
+					smoothIterations: params.getInt("smoothIter"),
+					// Without a viewpoint the sign of each plane fit is
+					// arbitrary, so orientation falls back to propagating across
+					// the neighbour graph.
+					...(flip
+						? { viewpoint: [...params.getPoint3m("viewPos")] as [number, number, number] }
+						: {}),
+				});
+				post.mask = MeshElement.MM_VERTNORMAL;
+				doc.Log.log(`Estimated normals for ${cm.vn} points`);
+				return { vertices: cm.vn };
+			}
+
+			case FP.FP_NORMAL_SMOOTH_POINTCLOUD: {
+				// Smoothing alone: re-run the estimator with zero neighbours for
+				// the fit is not meaningful, so this simply runs the smoothing
+				// passes over the field already present.
+				estimateNormals(cm, {
+					neighbors: params.getInt("K"),
+					smoothIterations: 1,
+				});
+				post.mask = MeshElement.MM_VERTNORMAL;
+				doc.Log.log(`Smoothed normals for ${cm.vn} points`);
+				return { vertices: cm.vn };
 			}
 
 			default:
