@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# The golden-fixture regeneration script talks to Docker and a real pymeshlab.
+# It must never run here; scripts/regen-golden.ts refuses to start unless this
+# is set, and CI deliberately never sets it.
+env:
+  MESHLAB_TS_ALLOW_GOLDEN_REGEN: ""
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun test
+      - run: bun run registry:check

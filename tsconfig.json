@@ -1,0 +1,30 @@
+{
+	"compilerOptions": {
+		"lib": ["ESNext"],
+		"target": "ESNext",
+		"module": "Preserve",
+		"moduleResolution": "bundler",
+		"moduleDetection": "force",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"types": ["bun"],
+
+		"strict": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"exactOptionalPropertyTypes": true,
+
+		// Deliberately OFF. The mesh kernel indexes typed arrays in hot loops;
+		// `number | undefined` on every element read would force non-null
+		// assertions everywhere and buy nothing — typed arrays never return
+		// undefined for an in-range index, and out-of-range reads are a bug we
+		// catch with assertAllocatorConsistent, not with the type system.
+		"noUncheckedIndexedAccess": false,
+
+		"skipLibCheck": true,
+		"noEmit": true
+	},
+	"include": ["src", "test", "scripts", "bin"]
+}

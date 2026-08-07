@@ -1,0 +1,8 @@
+# Read-only upstream sources used as a specification. Never committed.
+.reference/
+
+node_modules/
+dist/
+*.tsbuildinfo
+
+.DS_Store
