@@ -185,6 +185,15 @@ export {
 	quadricSimplification,
 } from "./vcg/complex/local_optimization/tri_edge_collapse_quadric.ts";
 export {
+	AbstractDomain,
+	type CollapseResult,
+	collapseWithParametrization,
+	domainVertexFaces,
+	type FlatStar,
+	flattenStar,
+	type PinnedVertex,
+} from "./vcg/complex/parametrization/abstract_domain.ts";
+export {
 	angleDistortion,
 	area3D,
 	areaDistortion,

@@ -167,6 +167,12 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **The abstract domain never loses a vertex.** `parametrization/abstract_domain.ts` simplifies a
+  mesh while every original vertex stays pinned inside some face of the coarse domain by a
+  barycentric coordinate. A collapse flattens the affected star, records where each pin sits,
+  collapses, flattens the smaller star *reusing the first one's boundary layout* so the two share
+  a coordinate system, and re-pins. A collapse that would strand a pin, or that folds the star
+  when flattened, is undone rather than approximated.
 - **Two flattening weights, because neither one wins.** `parametrization/harmonic.ts` offers mean
   value and cotangent weights for mapping a disk into the plane. Mean value weights are always
   positive, so Tutte's theorem applies and the result can never fold; cotangent weights minimise
