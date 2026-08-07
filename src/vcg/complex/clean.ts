@@ -1,18 +1,23 @@
 /**
  * `Clean` — mesh analysis and repair, mirroring `vcg::tri::Clean`.
  *
- * This file currently holds the *analysis* half: counting edges, holes,
- * components and non-manifold features, deciding orientability, and making a
- * mesh coherently oriented. The removal and repair operations
- * (`RemoveDuplicateVertex`, `RemoveNonManifoldFace`, …) land alongside them
- * when `filter_clean` is implemented.
+ * Two halves: the analysis functions (counting edges, holes, components and
+ * non-manifold features; deciding orientability) and the removal and repair
+ * functions behind `filter_clean`.
+ *
+ * A convention worth knowing before reading any of the removal functions: they
+ * *mark* elements deleted and leave compaction to the caller, exactly as
+ * VCGLib does. That is what lets several of them run in sequence over stable
+ * indices. The filters call `Allocator.compactEveryVector` at the end.
  */
 import { MLInternalException } from "../../common/utilities/ml_exception.ts";
+import { Allocator } from "./allocator.ts";
 import type { CMeshO } from "./cmesho.ts";
 import { FaceFlag } from "./flags.ts";
 import { Pos } from "./pos.ts";
 import { faceClearV } from "./update/flag.ts";
-import { fillSortedEdgeVector, isManifoldEdge } from "./update/topology.ts";
+import { faceNormalOf } from "./update/normal.ts";
+import { faceFace, fillSortedEdgeVector, isManifoldEdge } from "./update/topology.ts";
 
 export interface EdgeCounts {
 	/** Distinct undirected edges. */
@@ -361,7 +366,704 @@ export function orientCoherentlyMesh(m: CMeshO): OrientResult {
 	return { isOriented, isOrientable };
 }
 
+// ---------------------------------------------------------------------------
+// Removal and repair
+// ---------------------------------------------------------------------------
+
+/**
+ * Merges vertices that share the *exact* same coordinates, rewriting the faces
+ * that referenced the duplicates.
+ *
+ * Exact equality, not a tolerance — that is what `mergeCloseVertex` is for.
+ * This is the filter an STL always needs first, since the format stores every
+ * triangle's corners separately and a welded cube arrives as 36 vertices.
+ *
+ * Returns the number of vertices deleted. With `removeDegenerateFlag`, faces
+ * that collapsed to a line or a point as a result are deleted too, matching
+ * VCGLib.
+ */
+export function removeDuplicateVertex(m: CMeshO, removeDegenerateFlag = true): number {
+	if (m.vertSize === 0 || m.vn === 0) return 0;
+
+	// Group by coordinate. VCGLib sorts an array of pointers; a hash on the
+	// coordinate triple is the same idea without the O(n log n).
+	const survivorOf = new Map<string, number>();
+	const remap = new Int32Array(m.vertSize).fill(-1);
+	let deleted = 0;
+
+	for (let v = 0; v < m.vertSize; v++) {
+		if (m.isVertD(v)) continue;
+		const key = `${m.vx(v)},${m.vy(v)},${m.vz(v)}`;
+		const first = survivorOf.get(key);
+		if (first === undefined) {
+			survivorOf.set(key, v);
+			continue;
+		}
+		remap[v] = first;
+		Allocator.deleteVertex(m, v);
+		deleted++;
+	}
+	if (deleted === 0) return 0;
+
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let k = 0; k < 3; k++) {
+			const survivor = remap[m.faceVert[3 * f + k]];
+			if (survivor >= 0) m.faceVert[3 * f + k] = survivor;
+		}
+	}
+
+	if (removeDegenerateFlag) removeDegenerateFace(m);
+	m.imark++;
+	return deleted;
+}
+
+/**
+ * Deletes faces that reference the same vertex more than once.
+ *
+ * Topologically degenerate rather than geometrically: a face with a repeated
+ * index owns a self-edge, which makes adjacency ill-defined. See
+ * {@link removeFaceOutOfRangeArea} for the zero-area case.
+ */
+export function removeDegenerateFace(m: CMeshO): number {
+	let count = 0;
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		const a = m.faceVert[3 * f];
+		const b = m.faceVert[3 * f + 1];
+		const c = m.faceVert[3 * f + 2];
+		if (a === b || b === c || a === c) {
+			Allocator.deleteFace(m, f);
+			count++;
+		}
+	}
+	return count;
+}
+
+/** Deletes faces whose area falls outside `[minAreaThr, maxAreaThr]`. */
+export function removeFaceOutOfRangeArea(
+	m: CMeshO,
+	minAreaThr = 0,
+	maxAreaThr = Number.POSITIVE_INFINITY,
+	onlyOnSelected = false,
+): number {
+	const n = new Float64Array(3);
+	let count = 0;
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		if (onlyOnSelected && !m.isFaceS(f)) continue;
+		faceNormalOf(m, f, n);
+		const area = Math.hypot(n[0], n[1], n[2]) / 2;
+		if (area <= minAreaThr || area >= maxAreaThr) {
+			Allocator.deleteFace(m, f);
+			count++;
+		}
+	}
+	return count;
+}
+
+/**
+ * Deletes faces of exactly zero area.
+ *
+ * Note the boundary condition inherited from VCGLib: the test is `area <= 0`,
+ * so a face of area exactly zero goes, and nothing else does.
+ */
+export function removeZeroAreaFace(m: CMeshO): number {
+	return removeFaceOutOfRangeArea(m, 0);
+}
+
+/** Deletes faces that repeat another face's three vertices, in any order. */
+export function removeDuplicateFace(m: CMeshO): number {
+	const seen = new Set<string>();
+	let count = 0;
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		const key = [m.faceVert[3 * f], m.faceVert[3 * f + 1], m.faceVert[3 * f + 2]]
+			.sort((a, b) => a - b)
+			.join("_");
+		if (seen.has(key)) {
+			Allocator.deleteFace(m, f);
+			count++;
+		} else {
+			seen.add(key);
+		}
+	}
+	return count;
+}
+
+/** Counts vertices no live face references. */
+export function countUnreferencedVertex(m: CMeshO): number {
+	return removeUnreferencedVertex(m, false);
+}
+
+/**
+ * Deletes vertices no live face references, or just counts them when
+ * `deleteVertexFlag` is false.
+ */
+export function removeUnreferencedVertex(m: CMeshO, deleteVertexFlag = true): number {
+	const referenced = new Uint8Array(m.vertSize);
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let k = 0; k < 3; k++) referenced[m.faceVert[3 * f + k]] = 1;
+	}
+	let count = 0;
+	for (let v = 0; v < m.vertSize; v++) {
+		if (m.isVertD(v) || referenced[v] === 1) continue;
+		count++;
+		if (deleteVertexFlag) Allocator.deleteVertex(m, v);
+	}
+	return count;
+}
+
+/**
+ * Snaps vertices closer than `radius` onto a shared position, then merges
+ * them.
+ *
+ * Uses a uniform spatial hash sized to the radius, so each vertex only
+ * compares against the 27 cells that could hold a neighbour within range.
+ * Unlike {@link removeDuplicateVertex} this moves geometry, which is why the
+ * threshold defaults so small in the filter.
+ */
+export function mergeCloseVertex(m: CMeshO, radius: number): number {
+	if (radius <= 0 || m.vn === 0) return 0;
+	const cell = radius;
+	const buckets = new Map<string, number[]>();
+	const keyOf = (x: number, y: number, z: number) =>
+		`${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+
+	for (let v = 0; v < m.vertSize; v++) {
+		if (m.isVertD(v)) continue;
+		const key = keyOf(m.vx(v), m.vy(v), m.vz(v));
+		const hit = buckets.get(key);
+		if (hit === undefined) buckets.set(key, [v]);
+		else hit.push(v);
+	}
+
+	const r2 = radius * radius;
+	const snapped = new Uint8Array(m.vertSize);
+	let merged = 0;
+
+	for (let v = 0; v < m.vertSize; v++) {
+		if (m.isVertD(v) || snapped[v] === 1) continue;
+		const cx = Math.floor(m.vx(v) / cell);
+		const cy = Math.floor(m.vy(v) / cell);
+		const cz = Math.floor(m.vz(v) / cell);
+		for (let dx = -1; dx <= 1; dx++) {
+			for (let dy = -1; dy <= 1; dy++) {
+				for (let dz = -1; dz <= 1; dz++) {
+					for (const w of buckets.get(`${cx + dx},${cy + dy},${cz + dz}`) ?? []) {
+						if (w === v || snapped[w] === 1 || m.isVertD(w)) continue;
+						const ex = m.vx(w) - m.vx(v);
+						const ey = m.vy(w) - m.vy(v);
+						const ez = m.vz(w) - m.vz(v);
+						if (ex * ex + ey * ey + ez * ez >= r2) continue;
+						// Snap onto v's position so the pair becomes an exact
+						// duplicate, which removeDuplicateVertex then welds.
+						m.setVert(w, m.vx(v), m.vy(v), m.vz(v));
+						snapped[w] = 1;
+						merged++;
+					}
+				}
+			}
+		}
+		snapped[v] = 1;
+	}
+
+	if (merged > 0) removeDuplicateVertex(m);
+	return merged;
+}
+
+/** The faces of the component seeded at `seed`, walked over FF adjacency. */
+function componentFaces(m: CMeshO, seed: number): number[] {
+	const out: number[] = [];
+	const seen = new Set<number>([seed]);
+	const stack = [seed];
+	while (stack.length > 0) {
+		const f = stack.pop() as number;
+		out.push(f);
+		for (let e = 0; e < 3; e++) {
+			let nf = m.ffp(f, e);
+			let ne = m.ffi(f, e);
+			while (nf !== f || ne !== e) {
+				if (!m.isFaceD(nf) && !seen.has(nf)) {
+					seen.add(nf);
+					stack.push(nf);
+				}
+				const tf = m.ffp(nf, ne);
+				const te = m.ffi(nf, ne);
+				nf = tf;
+				ne = te;
+			}
+		}
+	}
+	return out;
+}
+
+export interface ComponentRemovalResult {
+	/** Components the mesh had before anything was removed. */
+	total: number;
+	/** Components deleted. */
+	deleted: number;
+}
+
+/** Deletes connected components with fewer than `maxCCSize` faces. Requires FF. */
+export function removeSmallConnectedComponentsSize(
+	m: CMeshO,
+	maxCCSize: number,
+): ComponentRemovalResult {
+	const components = connectedComponents(m);
+	let deleted = 0;
+	for (const [size, seed] of components) {
+		if (size >= maxCCSize) continue;
+		deleted++;
+		for (const f of componentFaces(m, seed)) {
+			if (!m.isFaceD(f)) Allocator.deleteFace(m, f);
+		}
+	}
+	return { total: components.length, deleted };
+}
+
+/**
+ * Deletes connected components whose bounding-box diagonal is under
+ * `maxDiameter`. Requires FF.
+ *
+ * Size in space rather than in face count, which is what you want for
+ * scanner noise: a dense speck can have plenty of triangles.
+ */
+export function removeSmallConnectedComponentsDiameter(
+	m: CMeshO,
+	maxDiameter: number,
+): ComponentRemovalResult {
+	const components = connectedComponents(m);
+	let deleted = 0;
+	for (const [, seed] of components) {
+		const faces = componentFaces(m, seed);
+		let minX = Number.POSITIVE_INFINITY;
+		let minY = Number.POSITIVE_INFINITY;
+		let minZ = Number.POSITIVE_INFINITY;
+		let maxX = Number.NEGATIVE_INFINITY;
+		let maxY = Number.NEGATIVE_INFINITY;
+		let maxZ = Number.NEGATIVE_INFINITY;
+		for (const f of faces) {
+			for (let k = 0; k < 3; k++) {
+				const v = m.fv(f, k);
+				minX = Math.min(minX, m.vx(v));
+				minY = Math.min(minY, m.vy(v));
+				minZ = Math.min(minZ, m.vz(v));
+				maxX = Math.max(maxX, m.vx(v));
+				maxY = Math.max(maxY, m.vy(v));
+				maxZ = Math.max(maxZ, m.vz(v));
+			}
+		}
+		const diag = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ);
+		if (diag >= maxDiameter) continue;
+		deleted++;
+		for (const f of faces) if (!m.isFaceD(f)) Allocator.deleteFace(m, f);
+	}
+	return { total: components.length, deleted };
+}
+
+/**
+ * Deletes faces incident on a non-manifold edge, smallest first, stopping as
+ * soon as the edge becomes manifold. Requires FF.
+ *
+ * Smallest-first is VCGLib's heuristic and a good one: the extra sliver
+ * glued onto a surface is usually the mistake, and the large faces around it
+ * are the real geometry. Each deletion re-checks, so an edge shared by three
+ * faces loses exactly one.
+ */
+export function removeNonManifoldFace(m: CMeshO): number {
+	const candidates: Array<{ f: number; area: number }> = [];
+	const n = new Float64Array(3);
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		if (isManifoldEdge(m, f, 0) && isManifoldEdge(m, f, 1) && isManifoldEdge(m, f, 2)) continue;
+		faceNormalOf(m, f, n);
+		candidates.push({ f, area: Math.hypot(n[0], n[1], n[2]) / 2 });
+	}
+	if (candidates.length === 0) return 0;
+	candidates.sort((a, b) => a.area - b.area || a.f - b.f);
+
+	let count = 0;
+	for (const { f } of candidates) {
+		if (m.isFaceD(f)) continue;
+		// Re-test: an earlier deletion may already have made this face's edges
+		// manifold, in which case it is legitimate geometry and stays.
+		if (isManifoldEdge(m, f, 0) && isManifoldEdge(m, f, 1) && isManifoldEdge(m, f, 2)) continue;
+		Allocator.deleteFace(m, f);
+		count++;
+		// The rings have to be rebuilt for the next re-test to mean anything.
+		faceFace(m);
+	}
+	return count;
+}
+
+/**
+ * Splits vertices whose incident faces form more than one fan, so that each
+ * fan gets its own copy.
+ *
+ * This is the "bowtie" repair. `moveThreshold` nudges each new vertex toward
+ * the barycentre of its own fan by that fraction, which separates the copies
+ * visibly; zero leaves them coincident.
+ *
+ * Returns the number of vertices split.
+ */
+export function splitNonManifoldVertex(m: CMeshO, moveThreshold = 0): number {
+	// vertex -> the (face, corner) pairs touching it
+	const corners: Array<Array<[number, number]>> = Array.from({ length: m.vertSize }, () => []);
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let k = 0; k < 3; k++) corners[m.faceVert[3 * f + k]].push([f, k]);
+	}
+
+	// Splitting appends vertices, so `m.vertSize` grows underneath the loop.
+	// Only the vertices that existed when the table was built are candidates;
+	// the copies are by construction single-fan.
+	const originalVertSize = m.vertSize;
+	let split = 0;
+	for (let v = 0; v < originalVertSize; v++) {
+		if (m.isVertD(v)) continue;
+		const inc = corners[v];
+		if (inc.length < 2) continue;
+
+		// Group the incident faces into fans: two faces belong to the same fan
+		// when they share an edge *through v*.
+		const index = new Map<number, number>(inc.map(([f], i) => [f, i]));
+		const parent = inc.map((_, i) => i);
+		const find = (x: number): number => {
+			let r = x;
+			while (parent[r] !== r) r = parent[r];
+			let cur = x;
+			while (parent[cur] !== r) {
+				const nxt = parent[cur];
+				parent[cur] = r;
+				cur = nxt;
+			}
+			return r;
+		};
+		const edgeOwner = new Map<number, number>();
+		for (const [f] of inc) {
+			for (let k = 0; k < 3; k++) {
+				const a = m.faceVert[3 * f + k];
+				const b = m.faceVert[3 * f + ((k + 1) % 3)];
+				if (a !== v && b !== v) continue;
+				const other = a === v ? b : a;
+				const me = index.get(f) as number;
+				const owner = edgeOwner.get(other);
+				if (owner === undefined) edgeOwner.set(other, me);
+				else {
+					const ra = find(owner);
+					const rb = find(me);
+					if (ra !== rb) parent[ra] = rb;
+				}
+			}
+		}
+
+		const fans = new Map<number, Array<[number, number]>>();
+		for (let i = 0; i < inc.length; i++) {
+			const root = find(i);
+			const hit = fans.get(root);
+			if (hit === undefined) fans.set(root, [inc[i]]);
+			else hit.push(inc[i]);
+		}
+		if (fans.size < 2) continue;
+
+		// The first fan keeps the original vertex; every other gets a copy.
+		let first = true;
+		for (const fan of fans.values()) {
+			if (first) {
+				first = false;
+				if (moveThreshold > 0) displaceTowardFan(m, v, v, fan, moveThreshold);
+				continue;
+			}
+			const copy = Allocator.addVertex(m, m.vx(v), m.vy(v), m.vz(v));
+			m.vertQuality[copy] = m.vertQuality[v];
+			m.vertColor[copy] = m.vertColor[v];
+			for (const [f, k] of fan) m.faceVert[3 * f + k] = copy;
+			if (moveThreshold > 0) displaceTowardFan(m, copy, v, fan, moveThreshold);
+		}
+		split++;
+	}
+	if (split > 0) m.imark++;
+	return split;
+}
+
+/** Moves `target` a fraction of the way toward its fan's barycentre. */
+function displaceTowardFan(
+	m: CMeshO,
+	target: number,
+	origin: number,
+	fan: ReadonlyArray<[number, number]>,
+	alpha: number,
+): void {
+	let bx = 0;
+	let by = 0;
+	let bz = 0;
+	let n = 0;
+	for (const [f] of fan) {
+		for (let k = 0; k < 3; k++) {
+			const w = m.fv(f, k);
+			bx += m.vx(w);
+			by += m.vy(w);
+			bz += m.vz(w);
+			n++;
+		}
+	}
+	if (n === 0) return;
+	bx /= n;
+	by /= n;
+	bz /= n;
+	m.setVert(
+		target,
+		m.vx(origin) + (bx - m.vx(origin)) * alpha,
+		m.vy(origin) + (by - m.vy(origin)) * alpha,
+		m.vz(origin) + (bz - m.vz(origin)) * alpha,
+	);
+}
+
+/**
+ * Splits the mesh into edge-manifold components by duplicating the vertices
+ * along non-manifold edges, so no face is deleted.
+ *
+ * The alternative to {@link removeNonManifoldFace}: it keeps every triangle
+ * and pays for it by pulling the sheets apart. Returns the number of
+ * components afterwards.
+ */
+export function splitManifoldComponents(m: CMeshO, moveThreshold = 0): number {
+	// Faces meeting along a non-manifold edge are given their own copies of
+	// that edge's endpoints, which detaches the sheets.
+	const sorted = fillSortedEdgeVector(m);
+	let i = 0;
+	const duplicated = new Map<string, number>();
+
+	while (i < sorted.length) {
+		let j = i + 1;
+		while (j < sorted.length && sorted[j].v0 === sorted[i].v0 && sorted[j].v1 === sorted[i].v1) j++;
+		if (j - i > 2) {
+			// Leave the first two uses on the original vertices; give each
+			// further use its own pair, so every sheet ends up separate.
+			for (let k = i + 2; k < j; k++) {
+				const use = sorted[k];
+				for (const endpoint of [sorted[i].v0, sorted[i].v1]) {
+					const key = `${use.f}_${endpoint}`;
+					let copy = duplicated.get(key);
+					if (copy === undefined) {
+						copy = Allocator.addVertex(m, m.vx(endpoint), m.vy(endpoint), m.vz(endpoint));
+						m.vertQuality[copy] = m.vertQuality[endpoint];
+						m.vertColor[copy] = m.vertColor[endpoint];
+						duplicated.set(key, copy);
+					}
+					for (let c = 0; c < 3; c++) {
+						if (m.faceVert[3 * use.f + c] === endpoint) m.faceVert[3 * use.f + c] = copy;
+					}
+				}
+			}
+		}
+		i = j;
+	}
+
+	splitNonManifoldVertex(m, moveThreshold);
+	faceFace(m);
+	m.imark++;
+	return countConnectedComponents(m);
+}
+
+/**
+ * Removes T-vertices — a vertex sitting partway along another face's edge,
+ * making a sliver whose base-to-height ratio exceeds `ratio`.
+ *
+ * `method` selects VCGLib's two strategies: collapsing the sliver's short
+ * edge, or flipping it. Collapse removes geometry, flip only rewires, so
+ * flip is the conservative choice on a mesh whose vertices matter.
+ *
+ * Requires FF. Returns the number of slivers dealt with.
+ */
+export function removeTVertexByCollapse(m: CMeshO, ratio = 40, repeat = true): number {
+	let total = 0;
+	let pass = 0;
+	for (;;) {
+		let done = 0;
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			const k = sliverApex(m, f, ratio);
+			if (k < 0) continue;
+			// Collapse the apex onto the nearest of the base's endpoints.
+			const apex = m.fv(f, k);
+			const b0 = m.fv(f, (k + 1) % 3);
+			const b1 = m.fv(f, (k + 2) % 3);
+			const d0 = distanceSquared(m, apex, b0);
+			const d1 = distanceSquared(m, apex, b1);
+			const keep = d0 <= d1 ? b0 : b1;
+			if (keep === apex) continue;
+			for (let g = 0; g < m.faceSize; g++) {
+				if (m.isFaceD(g)) continue;
+				for (let c = 0; c < 3; c++)
+					if (m.faceVert[3 * g + c] === apex) m.faceVert[3 * g + c] = keep;
+			}
+			done++;
+		}
+		removeDegenerateFace(m);
+		removeUnreferencedVertex(m);
+		total += done;
+		if (done === 0 || !repeat || ++pass > 10) break;
+		faceFace(m);
+	}
+	if (total > 0) {
+		faceFace(m);
+		m.imark++;
+	}
+	return total;
+}
+
+/**
+ * Removes T-vertices by flipping the sliver's base edge to the opposite
+ * diagonal of the quad it shares with its neighbour. Requires FF.
+ */
+export function removeTVertexByFlip(m: CMeshO, ratio = 40, repeat = true): number {
+	let total = 0;
+	let pass = 0;
+	for (;;) {
+		let done = 0;
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			const k = sliverApex(m, f, ratio);
+			if (k < 0) continue;
+			// The base is the edge opposite the apex; flipping needs a
+			// manifold neighbour across it.
+			const base = (k + 1) % 3;
+			if (m.isBorderFF(f, base) || !isManifoldEdge(m, f, base)) continue;
+			if (!flipEdge(m, f, base)) continue;
+			done++;
+			faceFace(m);
+		}
+		total += done;
+		if (done === 0 || !repeat || ++pass > 10) break;
+	}
+	if (total > 0) m.imark++;
+	return total;
+}
+
+/**
+ * The corner of `f` opposite its longest edge, when the face is a sliver whose
+ * base-to-height ratio exceeds `ratio`. -1 when the face is well shaped.
+ */
+function sliverApex(m: CMeshO, f: number, ratio: number): number {
+	let longest = -1;
+	let longestLen = -1;
+	for (let e = 0; e < 3; e++) {
+		const len = distanceSquared(m, m.fv(f, e), m.fv(f, (e + 1) % 3));
+		if (len > longestLen) {
+			longestLen = len;
+			longest = e;
+		}
+	}
+	if (longestLen <= 0) return -1;
+	const n = new Float64Array(3);
+	faceNormalOf(m, f, n);
+	const doubleArea = Math.hypot(n[0], n[1], n[2]);
+	const base = Math.sqrt(longestLen);
+	const height = doubleArea / base;
+	if (height === 0) return -1;
+	return base / height > ratio ? (longest + 2) % 3 : -1;
+}
+
+function distanceSquared(m: CMeshO, a: number, b: number): number {
+	const dx = m.vx(a) - m.vx(b);
+	const dy = m.vy(a) - m.vy(b);
+	const dz = m.vz(a) - m.vz(b);
+	return dx * dx + dy * dy + dz * dz;
+}
+
+/**
+ * Replaces edge `e` of face `f` with the other diagonal of the quad formed by
+ * `f` and its neighbour. Returns false when the flip is not legal.
+ */
+function flipEdge(m: CMeshO, f: number, e: number): boolean {
+	if (m.isBorderFF(f, e) || !isManifoldEdge(m, f, e)) return false;
+	const g = m.ffp(f, e);
+	const ge = m.ffi(f, e);
+	if (g === f) return false;
+
+	const a = m.fv(f, e);
+	const b = m.fv(f, (e + 1) % 3);
+	const cf = m.fv(f, (e + 2) % 3); // f's opposite corner
+	const cg = m.fv(g, (ge + 2) % 3); // g's opposite corner
+	if (cf === cg) return false;
+
+	// The flipped edge must not already exist, or the result is non-manifold.
+	for (let h = 0; h < m.faceSize; h++) {
+		if (m.isFaceD(h) || h === f || h === g) continue;
+		for (let k = 0; k < 3; k++) {
+			const p = m.faceVert[3 * h + k];
+			const q = m.faceVert[3 * h + ((k + 1) % 3)];
+			if ((p === cf && q === cg) || (p === cg && q === cf)) return false;
+		}
+	}
+
+	m.setFace(f, cf, a, cg);
+	m.setFace(g, cg, b, cf);
+	return true;
+}
+
+/**
+ * Flips the shared edge of pairs of faces that fold back on each other by more
+ * than `normalThresholdDeg`. Requires FF.
+ *
+ * A fold is two adjacent triangles facing nearly opposite directions — the
+ * classic artefact of a reconstruction that punched through itself.
+ */
+export function removeFaceFoldByFlip(m: CMeshO, normalThresholdDeg = 175, repeat = true): number {
+	const cosThreshold = Math.cos((normalThresholdDeg * Math.PI) / 180);
+	const nf = new Float64Array(3);
+	const ng = new Float64Array(3);
+	let total = 0;
+	let pass = 0;
+
+	for (;;) {
+		let done = 0;
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			for (let e = 0; e < 3; e++) {
+				if (m.isBorderFF(f, e) || !isManifoldEdge(m, f, e)) continue;
+				const g = m.ffp(f, e);
+				if (g <= f || m.isFaceD(g)) continue;
+				faceNormalOf(m, f, nf);
+				faceNormalOf(m, g, ng);
+				const lf = Math.hypot(nf[0], nf[1], nf[2]);
+				const lg = Math.hypot(ng[0], ng[1], ng[2]);
+				if (lf === 0 || lg === 0) continue;
+				const cos = (nf[0] * ng[0] + nf[1] * ng[1] + nf[2] * ng[2]) / (lf * lg);
+				if (cos > cosThreshold) continue;
+				if (!flipEdge(m, f, e)) continue;
+				done++;
+				faceFace(m);
+				break;
+			}
+		}
+		total += done;
+		if (done === 0 || !repeat || ++pass > 10) break;
+	}
+	if (total > 0) m.imark++;
+	return total;
+}
+
 export const Clean = {
+	removeDuplicateVertex,
+	removeDuplicateFace,
+	removeDegenerateFace,
+	removeFaceOutOfRangeArea,
+	removeZeroAreaFace,
+	countUnreferencedVertex,
+	removeUnreferencedVertex,
+	mergeCloseVertex,
+	removeSmallConnectedComponentsSize,
+	removeSmallConnectedComponentsDiameter,
+	removeNonManifoldFace,
+	splitNonManifoldVertex,
+	splitManifoldComponents,
+	removeTVertexByCollapse,
+	removeTVertexByFlip,
+	removeFaceFoldByFlip,
 	countEdgeNum,
 	isWaterTight,
 	countNonManifoldEdgeFF,

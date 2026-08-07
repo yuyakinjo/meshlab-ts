@@ -147,17 +147,37 @@ describe("the filter registry", () => {
 });
 
 describe("unimplemented filters", () => {
-	test("are all marked as such, for now", () => {
-		// Tier 0 ships the framework only; this flips as filters land, and
-		// the count is asserted so that "implemented" never drifts silently.
-		expect(kernel.filterList().filter((f) => f.implemented)).toHaveLength(0);
+	test("the implemented set is exactly what the plugins claim", () => {
+		// Asserted rather than merely counted so that a filter cannot quietly
+		// stop being implemented — a rename that leaves the old name on a stub
+		// would otherwise look like nothing happened.
+		const implemented = kernel
+			.filterList()
+			.filter((f) => f.implemented)
+			.map((f) => f.name)
+			.sort();
+		expect(implemented).toEqual(
+			[
+				"Merge Close Vertices",
+				"Remove Duplicate Faces",
+				"Remove Duplicate Vertices",
+				"Remove Isolated Folded Faces by Edge Flip",
+				"Remove Isolated pieces (wrt Diameter)",
+				"Remove Isolated pieces (wrt Face Num.)",
+				"Remove T-Vertices",
+				"Remove Unreferenced Vertices",
+				"Remove Zero Area Faces",
+				"Repair non Manifold Edges",
+				"Repair non Manifold Vertices by splitting",
+			].sort(),
+		);
 	});
 
 	test("throw MLNotImplementedException rather than doing nothing", () => {
 		const doc = new MeshDocument();
 		doc.addNewMesh("m", "m");
-		for (const name of ["Close Holes", "Remove Duplicate Vertices", "Taubin Smooth"]) {
-			expect(() => kernel.applyFilter(doc, name)).toThrow(MLNotImplementedException);
+		for (const name of ["Close Holes", "Taubin Smooth", "Compute Geometric Measures"]) {
+			expect(() => kernel.applyFilter(doc, name), name).toThrow(MLNotImplementedException);
 		}
 	});
 
