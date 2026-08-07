@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createStubPlugins } from "../meshlabplugins/_stub/stub_plugins.ts";
 import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
+import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
 import { FilterSelect } from "../meshlabplugins/filter_select/filter_select.ts";
@@ -38,6 +39,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterMeasure(),
 	() => new FilterSelect(),
 	() => new FilterUnsharp(),
+	() => new FilterLayer(),
 ];
 
 /** The I/O plugins that have real implementations. */
