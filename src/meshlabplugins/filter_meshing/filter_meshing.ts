@@ -37,6 +37,7 @@ import {
 	quadricSimplification,
 } from "../../vcg/complex/local_optimization/tri_edge_collapse_quadric.ts";
 import { estimateNormals } from "../../vcg/complex/pointcloud_normal.ts";
+import { Refine } from "../../vcg/complex/refine.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdatePosition } from "../../vcg/complex/update/position.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
@@ -54,6 +55,9 @@ export const FP = {
 	FP_RESET_TRANSFORM: 8,
 	FP_NORMAL_EXTRAPOLATION: 9,
 	FP_NORMAL_SMOOTH_POINTCLOUD: 10,
+	FP_LOOP_SS: 11,
+	FP_BUTTERFLY_SS: 12,
+	FP_MIDPOINT: 13,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -104,6 +108,33 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		// Deliberately no adjacency: the decimator maintains its own incidence
 		// through the collapses, and FF would be stale after the first one.
 		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_LOOP_SS]: {
+		name: "Subdivision Surfaces: Loop",
+		pythonName: "meshing_surface_subdivision_loop",
+		info:
+			"Apply Loop's Subdivision Surface algorithm. It is an approximant subdivision method and " +
+			"it works for every triangle and has rules for extraordinary vertices.<br>",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_BUTTERFLY_SS]: {
+		name: "Subdivision Surfaces: Butterfly Subdivision",
+		pythonName: "meshing_surface_subdivision_butterfly",
+		info:
+			"Apply Butterfly Subdivision Surface algorithm. It is an interpolated method, defined on " +
+			"arbitrary triangular meshes. The scheme is known to be C1 but not C2 on regular meshes<br>",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_MIDPOINT]: {
+		name: "Subdivision Surfaces: Midpoint",
+		pythonName: "meshing_surface_subdivision_midpoint",
+		info:
+			"Apply a plain subdivision scheme where every edge is split on its midpoint. Useful to " +
+			"uniformly refine a mesh substituting each triangle with four smaller triangles.",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_FACEFACETOPO,
 	},
 	[FP.FP_SCALE]: {
 		name: "Transform: Scale, Normalize",
@@ -269,6 +300,42 @@ export class FilterMeshing extends FilterPlugin {
 					new RichPercentage("RefineHoleEdgeLen", diag * 0.03, 0, diag, {
 						description: "Hole Refinement Edge Len",
 						tooltip: "The target edge lenght of the triangulation inside the filled hole.",
+					}),
+				);
+				break;
+			}
+
+			case FP.FP_LOOP_SS:
+			case FP.FP_BUTTERFLY_SS:
+			case FP.FP_MIDPOINT: {
+				if (id === FP.FP_LOOP_SS) {
+					list.add(
+						new RichEnum("LoopWeight", 0, ["Loop", "Enhance regularity", "Enhance continuity"], {
+							description: "Weighting scheme",
+							tooltip:
+								"Change the weights used. Allows one to optimize some behaviors over others.",
+						}),
+					);
+				}
+				list.add(
+					new RichInt("Iterations", 3, {
+						description: "Iterations",
+						tooltip: "Number of time the model is subdivided.",
+					}),
+				);
+				const diag = subdivisionDiagonal(m);
+				list.add(
+					new RichPercentage("Threshold", diag * 0.01, 0, diag, {
+						description: "Edge Threshold",
+						tooltip:
+							"All the edges <b>longer</b> than this threshold will be refined.<br>Setting this " +
+							"value to zero will force an uniform refinement.",
+					}),
+				);
+				list.add(
+					new RichBool("Selected", selectedFaceCount(m) > 0, {
+						description: "Affect only selected faces",
+						tooltip: "If selected the filter affect only the selected faces",
 					}),
 				);
 				break;
@@ -663,6 +730,49 @@ export class FilterMeshing extends FilterPlugin {
 				return { closed_holes: holeCount, new_faces: newFaces };
 			}
 
+			case FP.FP_LOOP_SS:
+			case FP.FP_BUTTERFLY_SS:
+			case FP.FP_MIDPOINT: {
+				if (id === FP.FP_LOOP_SS && params.getEnum("LoopWeight") !== 0) {
+					throw new MLNotImplementedException(
+						'Subdivision Surfaces: Loop currently supports only the "Loop" weighting scheme; ' +
+							'"Enhance regularity" and "Enhance continuity" are not implemented yet.',
+						"FilterMeshing",
+					);
+				}
+				const iterations = params.getInt("Iterations");
+				if (iterations < 1)
+					throw new MLException(`Iterations must be at least 1, got ${iterations}`);
+				const threshold = params.getAbsPerc("Threshold");
+				// Zero means "every edge"; anything else refines only what is
+				// longer than it, which is how a hand-tuned pass stays local.
+				const predicate = threshold > 0 ? Refine.longerThan(threshold) : Refine.everyEdge;
+				const options = { selectedOnly: params.getBool("Selected") };
+
+				const before = { vn: cm.vn, fn: cm.fn };
+				let done = 0;
+				for (let i = 0; i < iterations; i++) {
+					UpdateTopology.faceFace(cm);
+					const changed =
+						id === FP.FP_LOOP_SS
+							? Refine.refineLoop(cm, predicate, options)
+							: Refine.refineE(
+									cm,
+									id === FP.FP_BUTTERFLY_SS ? Refine.midPointButterfly : Refine.midPoint,
+									predicate,
+									options,
+								);
+					if (!changed) break;
+					done++;
+				}
+				Allocator.compactEveryVector(cm);
+				m.updateBoxAndNormals();
+				doc.Log.log(
+					`Subdivided ${done} time(s): ${before.vn} vertices and ${before.fn} faces became ${cm.vn} and ${cm.fn}`,
+				);
+				return { iterations_done: done, vertex_number: cm.vn, face_number: cm.fn };
+			}
+
 			case FP.FP_QUADRIC_SIMPLIFICATION: {
 				const perc = params.getFloat("TargetPerc");
 				const targetFaceNum =
@@ -899,4 +1009,19 @@ export class FilterMeshing extends FilterPlugin {
 		if (choice === 2) return params.getPoint3m("customCenter");
 		return [0, 0, 0];
 	}
+}
+
+/** Bounding-box diagonal, or 1 when there is no mesh to measure yet. */
+function subdivisionDiagonal(m: MeshModel | undefined): number {
+	if (m === undefined) return 1;
+	UpdateBounding.box(m.cm);
+	return m.cm.bbox.diagonal || 1;
+}
+
+/** How many faces are selected, which is what decides the "Selected" default. */
+function selectedFaceCount(m: MeshModel | undefined): number {
+	if (m === undefined) return 0;
+	let n = 0;
+	for (let f = 0; f < m.cm.faceSize; f++) if (!m.cm.isFaceD(f) && m.cm.isFaceS(f)) n++;
+	return n;
 }
