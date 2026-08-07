@@ -180,6 +180,12 @@ describe("decimation properties", () => {
 				(bi, frac) => {
 					const base = BASES[bi];
 					if (!base.closed) return;
+					// Hausdorff here is brute force, O(V x F). That is deliberate —
+					// it keeps the check independent of any spatial index the
+					// kernel might have — but it means the 1280-face sphere costs
+					// too much to run thousands of times. The 320-face bases make
+					// the same point.
+					if (base.name === "sphere3") return;
 					const original = base.make();
 					const cm = base.make();
 					UpdateBounding.box(original);
