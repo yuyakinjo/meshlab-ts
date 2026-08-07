@@ -1,14 +1,19 @@
 /**
- * `filter_meshing` — orientation and hole closing.
+ * `filter_meshing` — orientation, hole closing and decimation.
  *
- * The rest of upstream's 37 filters (decimation, remeshing, subdivision, the
- * transform family) arrive with the later tiers; these three are what a repair
- * pipeline needs.
+ * The rest of upstream's 37 filters (isotropic remeshing, subdivision, the
+ * transform family) arrive with the later tiers; these four are what a
+ * 3D-printing repair pipeline needs.
  */
 import type { MeshDocument } from "../../common/ml_document/mesh_document.ts";
 import { MeshElement } from "../../common/ml_document/mesh_element.ts";
 import type { MeshModel } from "../../common/ml_document/mesh_model.ts";
-import { RichBool, RichInt, RichPercentage } from "../../common/parameters/rich_parameter.ts";
+import {
+	RichBool,
+	RichFloat,
+	RichInt,
+	RichPercentage,
+} from "../../common/parameters/rich_parameter.ts";
 import { RichParameterList } from "../../common/parameters/rich_parameter_list.ts";
 import { FilterArity, type FilterArityValue } from "../../common/plugins/filter_arity.ts";
 import { FilterClass, type FilterClassMask } from "../../common/plugins/filter_class.ts";
@@ -23,6 +28,10 @@ import { MLException } from "../../common/utilities/ml_exception.ts";
 import { Allocator } from "../../vcg/complex/allocator.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
 import { Hole } from "../../vcg/complex/hole.ts";
+import {
+	defaultQuadricParameters,
+	quadricSimplification,
+} from "../../vcg/complex/local_optimization/tri_edge_collapse_quadric.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
 
@@ -30,6 +39,7 @@ export const FP = {
 	FP_REORIENT: 0,
 	FP_INVERT_FACES: 1,
 	FP_CLOSE_HOLES: 2,
+	FP_QUADRIC_SIMPLIFICATION: 3,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -69,6 +79,17 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 			"from the surrounding surface.",
 		filterClass: FilterClass.Remeshing,
 		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_QUADRIC_SIMPLIFICATION]: {
+		name: "Simplification: Quadric Edge Collapse Decimation",
+		pythonName: "meshing_decimation_quadric_edge_collapse",
+		info:
+			"Simplify a mesh using a Quadric based Edge Collapse Strategy; better than clustering " +
+			"but slower.",
+		filterClass: FilterClass.Remeshing,
+		// Deliberately no adjacency: the decimator maintains its own incidence
+		// through the collapses, and FF would be stale after the first one.
+		requirements: MeshElement.MM_NONE,
 	},
 };
 
@@ -186,6 +207,124 @@ export class FilterMeshing extends FilterPlugin {
 				break;
 			}
 
+			case FP.FP_QUADRIC_SIMPLIFICATION: {
+				const faces = m === undefined ? 0 : m.cm.fn;
+				let selectedFaces = 0;
+				if (m !== undefined) {
+					for (let f = 0; f < m.cm.faceSize; f++) {
+						if (!m.cm.isFaceD(f) && m.cm.isFaceS(f)) selectedFaces++;
+					}
+				}
+				const d = defaultQuadricParameters();
+				list.add(
+					new RichInt(
+						"TargetFaceNum",
+						Math.floor((selectedFaces > 0 ? selectedFaces : faces) / 2),
+						{
+							description: "Target number of faces",
+							tooltip: "The desired final number of faces.",
+						},
+					),
+				);
+				list.add(
+					new RichFloat("TargetPerc", 0, {
+						description: "Percentage reduction (0..1)",
+						tooltip:
+							"If non zero, this parameter specifies the desired final size of the mesh as a " +
+							"percentage of the initial size.",
+					}),
+				);
+				list.add(
+					new RichFloat("QualityThr", d.qualityThr, {
+						description: "Quality threshold",
+						tooltip:
+							"Quality threshold for penalizing bad shaped faces. The value is in the range " +
+							"[0..1]; 0 accepts any kind of face, 0.5 penalizes faces with quality < 0.5.",
+					}),
+				);
+				list.add(
+					new RichBool("PreserveBoundary", d.preserveBoundary, {
+						description: "Preserve Boundary of the mesh",
+						tooltip:
+							"The simplification process tries to do not affect mesh boundaries during " +
+							"simplification",
+					}),
+				);
+				list.add(
+					new RichFloat("BoundaryWeight", 1.0, {
+						description: "Boundary Preserving Weight",
+						tooltip:
+							"The importance of the boundary during simplification. Default (1.0) means that " +
+							"the boundary has the same importance of the rest.",
+					}),
+				);
+				list.add(
+					new RichBool("PreserveNormal", d.normalCheck, {
+						description: "Preserve Normal",
+						tooltip:
+							"Try to avoid face flipping effects and try to preserve the original orientation " +
+							"of the surface",
+					}),
+				);
+				list.add(
+					new RichBool("PreserveTopology", d.preserveTopology, {
+						description: "Preserve Topology",
+						tooltip:
+							"Avoid all the collapses that should cause a topology change in the mesh (like " +
+							"closing holes, squeezing handles, etc). If checked the genus of the mesh should " +
+							"stay unchanged.",
+					}),
+				);
+				list.add(
+					new RichBool("OptimalPlacement", d.optimalPlacement, {
+						description: "Optimal position of simplified vertices",
+						tooltip:
+							"Each collapsed vertex is placed in the position minimizing the quadric error. " +
+							"If disabled edges are collapsed onto one of the two original vertices and the " +
+							"final mesh is composed by a subset of the original vertices.",
+					}),
+				);
+				list.add(
+					new RichBool("PlanarQuadric", d.qualityQuadric, {
+						description: "Planar Simplification",
+						tooltip:
+							"Add additional simplification constraints that improves the quality of the " +
+							"simplification of the planar portion of the mesh.",
+					}),
+				);
+				list.add(
+					new RichFloat("PlanarWeight", d.qualityQuadricWeight, {
+						description: "Planar Simp. Weight",
+						tooltip:
+							"How much we should try to preserve the triangles in the planar regions. If you " +
+							"lower this value planar areas will be simplified more.",
+					}),
+				);
+				list.add(
+					new RichBool("QualityWeight", d.qualityWeight, {
+						description: "Weighted Simplification",
+						tooltip:
+							"Use the Per-Vertex quality as a weighting factor for the simplification. The " +
+							"weight is used as a error amplification value.",
+					}),
+				);
+				list.add(
+					new RichBool("AutoClean", true, {
+						description: "Post-simplification cleaning",
+						tooltip:
+							"After the simplification an additional set of steps is performed to clean the " +
+							"mesh (unreferenced vertices, bad faces, etc)",
+					}),
+				);
+				list.add(
+					new RichBool("Selected", selectedFaces > 0, {
+						description: "Simplify only selected faces",
+						tooltip: "The simplification is applied only to the selected set of faces.",
+					}),
+				);
+				break;
+			}
+
 			default:
 				break;
 		}
@@ -267,6 +406,75 @@ export class FilterMeshing extends FilterPlugin {
 				doc.Log.log(`Closed ${holeCount} holes and added ${newFaces} new faces`);
 				// Upstream's output keys, so a caller reading them keeps working.
 				return { closed_holes: holeCount, new_faces: newFaces };
+			}
+
+			case FP.FP_QUADRIC_SIMPLIFICATION: {
+				const perc = params.getFloat("TargetPerc");
+				const targetFaceNum =
+					perc !== 0 ? Math.round(cm.fn * perc) : params.getInt("TargetFaceNum");
+
+				const before = cm.fn;
+				const result = quadricSimplification(cm, {
+					targetFaceNum,
+					selected: params.getBool("Selected"),
+					callback: _cb,
+					params: {
+						qualityThr: params.getFloat("QualityThr"),
+						preserveBoundary: params.getBool("PreserveBoundary"),
+						// Upstream multiplies its default by the user's factor
+						// rather than replacing it.
+						boundaryQuadricWeight:
+							defaultQuadricParameters().boundaryQuadricWeight * params.getFloat("BoundaryWeight"),
+						normalCheck: params.getBool("PreserveNormal"),
+						preserveTopology: params.getBool("PreserveTopology"),
+						optimalPlacement: params.getBool("OptimalPlacement"),
+						qualityQuadric: params.getBool("PlanarQuadric"),
+						qualityQuadricWeight: params.getFloat("PlanarWeight"),
+						qualityWeight: params.getBool("QualityWeight"),
+					},
+				});
+
+				if (params.getBool("AutoClean")) {
+					const nullFaces = Clean.removeFaceOutOfRangeArea(cm, 0);
+					if (nullFaces > 0) {
+						doc.Log.log(`PostSimplification Cleaning: Removed ${nullFaces} null faces`);
+					}
+					const dupVerts = Clean.removeDuplicateVertex(cm);
+					if (dupVerts > 0) {
+						doc.Log.log(`PostSimplification Cleaning: Removed ${dupVerts} duplicated vertices`);
+					}
+					const unref = Clean.removeUnreferencedVertex(cm);
+					if (unref > 0) {
+						doc.Log.log(`PostSimplification Cleaning: Removed ${unref} unreferenced vertices`);
+					}
+				}
+
+				Allocator.compactEveryVector(cm);
+				m.clearDataMask(MeshElement.MM_FACEFACETOPO);
+				m.updateBoxAndNormals();
+
+				doc.Log.log(`Reduced from ${before} to ${cm.fn} faces`);
+				// Falling short of the target is a normal outcome with
+				// PreserveTopology — every surface has a coarsest
+				// triangulation, and a torus cannot go below about 14 faces
+				// without becoming a sphere. Say so, rather than leaving the
+				// caller to wonder why they asked for 10 and got 18.
+				if (cm.fn > targetFaceNum) {
+					doc.Log.warning(
+						`Could not reach the target of ${targetFaceNum} faces: no further collapse was ` +
+							(params.getBool("PreserveTopology")
+								? "possible without changing the topology of the mesh."
+								: "legal on this mesh."),
+					);
+				}
+
+				return {
+					target_face_num: targetFaceNum,
+					initial_faces: result.initialFaces,
+					final_faces: cm.fn,
+					collapses: result.performed,
+					target_reached: cm.fn <= targetFaceNum,
+				};
 			}
 
 			default:

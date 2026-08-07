@@ -437,6 +437,131 @@ export function assertVFConsistent(m: CMeshO, label = "mesh"): void {
 	expect(seen.size, `${label}: VF chains must cover every live face corner`).toBe(corners);
 }
 
+/** Squared distance from a point to a triangle, clamped to the triangle. */
+function pointTriangleDistanceSquared(
+	px: number,
+	py: number,
+	pz: number,
+	ax: number,
+	ay: number,
+	az: number,
+	bx: number,
+	by: number,
+	bz: number,
+	cx: number,
+	cy: number,
+	cz: number,
+): number {
+	// Ericson's closest-point-on-triangle, by Voronoi region.
+	const abx = bx - ax;
+	const aby = by - ay;
+	const abz = bz - az;
+	const acx = cx - ax;
+	const acy = cy - ay;
+	const acz = cz - az;
+	const apx = px - ax;
+	const apy = py - ay;
+	const apz = pz - az;
+
+	const d1 = abx * apx + aby * apy + abz * apz;
+	const d2 = acx * apx + acy * apy + acz * apz;
+	let qx: number;
+	let qy: number;
+	let qz: number;
+
+	if (d1 <= 0 && d2 <= 0) {
+		[qx, qy, qz] = [ax, ay, az];
+	} else {
+		const bpx = px - bx;
+		const bpy = py - by;
+		const bpz = pz - bz;
+		const d3 = abx * bpx + aby * bpy + abz * bpz;
+		const d4 = acx * bpx + acy * bpy + acz * bpz;
+		if (d3 >= 0 && d4 <= d3) {
+			[qx, qy, qz] = [bx, by, bz];
+		} else {
+			const cpx = px - cx;
+			const cpy = py - cy;
+			const cpz = pz - cz;
+			const d5 = abx * cpx + aby * cpy + abz * cpz;
+			const d6 = acx * cpx + acy * cpy + acz * cpz;
+			if (d6 >= 0 && d5 <= d6) {
+				[qx, qy, qz] = [cx, cy, cz];
+			} else {
+				const vc = d1 * d4 - d3 * d2;
+				const vb = d5 * d2 - d1 * d6;
+				const va = d3 * d6 - d5 * d4;
+				if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+					const t = d1 / (d1 - d3);
+					[qx, qy, qz] = [ax + abx * t, ay + aby * t, az + abz * t];
+				} else if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+					const t = d2 / (d2 - d6);
+					[qx, qy, qz] = [ax + acx * t, ay + acy * t, az + acz * t];
+				} else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+					const t = (d4 - d3) / (d4 - d3 + (d5 - d6));
+					[qx, qy, qz] = [bx + (cx - bx) * t, by + (cy - by) * t, bz + (cz - bz) * t];
+				} else {
+					const denom = 1 / (va + vb + vc);
+					const v = vb * denom;
+					const w = vc * denom;
+					[qx, qy, qz] = [ax + abx * v + acx * w, ay + aby * v + acy * w, az + abz * v + acz * w];
+				}
+			}
+		}
+	}
+	const dx = px - qx;
+	const dy = py - qy;
+	const dz = pz - qz;
+	return dx * dx + dy * dy + dz * dz;
+}
+
+/**
+ * The one-sided Hausdorff distance from `a`'s vertices to `b`'s surface.
+ *
+ * Brute force, which is fine for test-sized meshes and keeps this a genuinely
+ * independent check rather than a reuse of whatever spatial index the kernel
+ * happens to have.
+ */
+export function hausdorffDistance(a: CMeshO, b: CMeshO): number {
+	const faces = liveFaces(b);
+	if (faces.length === 0) return Number.POSITIVE_INFINITY;
+	let worst = 0;
+	for (const v of liveVerts(a)) {
+		let best = Number.POSITIVE_INFINITY;
+		const px = a.vx(v);
+		const py = a.vy(v);
+		const pz = a.vz(v);
+		for (const f of faces) {
+			const i = b.fv(f, 0);
+			const j = b.fv(f, 1);
+			const k = b.fv(f, 2);
+			const d = pointTriangleDistanceSquared(
+				px,
+				py,
+				pz,
+				b.vx(i),
+				b.vy(i),
+				b.vz(i),
+				b.vx(j),
+				b.vy(j),
+				b.vz(j),
+				b.vx(k),
+				b.vy(k),
+				b.vz(k),
+			);
+			if (d < best) best = d;
+			if (best === 0) break;
+		}
+		if (best > worst) worst = best;
+	}
+	return Math.sqrt(worst);
+}
+
+/** The symmetric Hausdorff distance between two meshes. */
+export function symmetricHausdorff(a: CMeshO, b: CMeshO): number {
+	return Math.max(hausdorffDistance(a, b), hausdorffDistance(b, a));
+}
+
 /** Applying `fn` twice must produce the same mesh as applying it once. */
 export function assertIdempotent(
 	build: () => CMeshO,
