@@ -70,6 +70,35 @@ export function triQuality(
 }
 
 /**
+ * `2 * inradius / circumradius`, normalised so an equilateral triangle is 1.
+ *
+ * VCGLib's `QualityRadii`. A different measure from {@link triQuality}: this
+ * one collapses to zero for a sliver *and* for a needle, where area over
+ * longest-edge only notices the sliver.
+ */
+export function triQualityRadii(
+	ax: number,
+	ay: number,
+	az: number,
+	bx: number,
+	by: number,
+	bz: number,
+	cx: number,
+	cy: number,
+	cz: number,
+): number {
+	const la = Math.hypot(bx - cx, by - cy, bz - cz);
+	const lb = Math.hypot(cx - ax, cy - ay, cz - az);
+	const lc = Math.hypot(ax - bx, ay - by, az - bz);
+	const s = (la + lb + lc) / 2;
+	const area = Math.sqrt(Math.max(0, s * (s - la) * (s - lb) * (s - lc)));
+	if (area === 0 || s === 0) return 0;
+	const inradius = area / s;
+	const circumradius = (la * lb * lc) / (4 * area);
+	return (2 * inradius) / circumradius;
+}
+
+/**
  * The link condition: collapsing an edge is safe exactly when the only
  * vertices adjacent to both endpoints are the ones opposite the edge.
  *
@@ -240,6 +269,7 @@ export const EdgeOps = {
 	buildVertexFaces,
 	sharedFaces,
 	triQuality,
+	triQualityRadii,
 	linkCondition,
 	collapseEdge,
 	edgePairOf,
