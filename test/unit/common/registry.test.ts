@@ -15,8 +15,6 @@ import {
 } from "../../../src/common/utilities/ml_exception.ts";
 import { FILTER_TABLE } from "../../../src/meshlabplugins/_stub/filter_table.ts";
 import { createStubPlugins } from "../../../src/meshlabplugins/_stub/stub_plugins.ts";
-import { FilterClean } from "../../../src/meshlabplugins/filter_clean/filter_clean.ts";
-import { FilterMeshing } from "../../../src/meshlabplugins/filter_meshing/filter_meshing.ts";
 
 const kernel = MeshLabKernel.default();
 
@@ -154,9 +152,16 @@ describe("unimplemented filters", () => {
 		// need editing every time a filter lands — but it still catches the
 		// failure that matters: a filter that stops being implemented, or a
 		// rename that leaves the old name sitting on a stub.
+		// The plugins are discovered from the registry rather than listed, so
+		// this needs no edit when one is added.
+		const plugins = new Set(
+			kernel
+				.filterList()
+				.filter((f) => f.implemented)
+				.map((f) => f.plugin),
+		);
 		const declared = new Set<string>();
-		for (const make of [() => new FilterClean(), () => new FilterMeshing()]) {
-			const plugin = make();
+		for (const plugin of plugins) {
 			for (const id of plugin.actions()) declared.add(plugin.filterName(id));
 		}
 		const registered = new Set(
@@ -178,9 +183,15 @@ describe("unimplemented filters", () => {
 	test("throw MLNotImplementedException rather than doing nothing", () => {
 		const doc = new MeshDocument();
 		doc.addNewMesh("m", "m");
-		// Named filters, so a regression points at something specific. Update
-		// the list as these land.
-		for (const name of ["Taubin Smooth", "Compute Geometric Measures", "Select None"]) {
+		// Named filters, so a regression points at something specific rather
+		// than at whatever happens to be first. These are far enough down the
+		// tiers that they will not land soon; the assertion below fails loudly
+		// with instructions if one does.
+		for (const name of [
+			"Surface Reconstruction: Screened Poisson",
+			"Mesh Boolean: Union",
+			"Parametrization: Voronoi Atlas",
+		]) {
 			const action = kernel.filterAction(name);
 			expect(action.implemented, `${name} is now implemented — pick another here`).toBe(false);
 			expect(() => kernel.applyFilter(doc, name), name).toThrow(MLNotImplementedException);
