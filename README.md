@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 and 1 are complete, and Tier 2 is under way.** 92 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 104 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -26,6 +26,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
   sampling, point-cloud simplification, Hausdorff distance
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
+- **filter_func** (12) — expression-driven filters: conditional vertex and face selection,
+  per-vertex/face quality, colour, normal and geometric functions, a grid generator, an
+  implicit-surface extractor and user-defined refinement
 - **filter_colorproc** (21) — colour fill, invert, desaturate, levels, brightness/contrast/gamma,
   thresholding, colourisation, white balance, noise, quality-to-colour ramps, quality clamping,
   colour and quality transfer between vertices and faces, random and per-component labelling,
@@ -37,7 +40,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 190 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 178 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -143,6 +146,11 @@ of truth for filter names and parameter defaults. No code is copied from it.
 - **Local operations live in one place.** `edge_ops.ts` holds the edge collapse, the edge flip
   and the link condition, because QEM decimation and isotropic remeshing both need them and both
   get them subtly wrong on their own.
+- **The expression dialect is muParser's, not JavaScript's.** `filter_func` hands user formulas
+  to muParser upstream, so `^` is exponentiation and right-associative, a unary sign binds
+  tighter than `+`/`-` but looser than `^` (`-2^2` is -4, `-2*3` is -6), `log` is the natural
+  logarithm, and comparisons yield 1 or 0 rather than booleans. `rnd` is the one omission: a
+  filter whose output changed between runs would make every downstream hash useless.
 - **Screened Poisson is reimplemented, not ported.** MeshLab vendors 15k lines of Kazhdan's
   PoissonRecon; this is a trilinear multigrid solve with marching tetrahedra instead of degree-2
   B-splines with conjugate gradients. The parameters and their meanings match, so the output is

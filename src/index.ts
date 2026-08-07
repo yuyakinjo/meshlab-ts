@@ -153,6 +153,7 @@ export { UpdateNormal } from "./vcg/complex/update/normal.ts";
 export { UpdatePosition } from "./vcg/complex/update/position.ts";
 export { UpdateTopology } from "./vcg/complex/update/topology.ts";
 export type { Scalarm } from "./vcg/math/base.ts";
+export { type CompiledExpression, compileExpression, Expression } from "./vcg/math/expression.ts";
 export { GenNormal, type SpherePoint } from "./vcg/math/gen_normal.ts";
 export { type Matrix44, Matrix44Ops } from "./vcg/math/matrix44.ts";
 export { Point3 } from "./vcg/math/vec3.ts";
