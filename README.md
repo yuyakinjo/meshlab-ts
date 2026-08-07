@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 106 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 117 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -21,7 +21,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
   isotropic explicit remeshing, clustering decimation, principal curvature directions
 - **filter_select** (11) — selection and deletion
 - **filter_measure** (4) — topological and geometric measures
-- **filter_unsharp** (4) — Laplacian, Taubin, HC and scale-dependent smoothing
+- **filter_unsharp** (15) — Laplacian, Taubin, HC and scale-dependent smoothing, normal
+  recomputation in four weighting schemes, normal and quality normalisation and smoothing,
+  unsharp masking of geometry/normals/colour/quality, linear morphing
 - **filter_layer** (4) — flatten, duplicate, delete, rename
 - **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
   sampling, point-cloud simplification, Hausdorff distance
@@ -40,7 +42,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 176 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 165 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash

@@ -15,6 +15,7 @@
 import type { CMeshO } from "./cmesho.ts";
 import { VertexFlag } from "./flags.ts";
 import { vertexBorderFromNone } from "./update/flag.ts";
+import { UpdateTopology } from "./update/topology.ts";
 
 /**
  * Sum of neighbour positions and neighbour count, per vertex.
@@ -301,9 +302,118 @@ export function vertexCoordScaleDependentLaplacian(
 	m.imark++;
 }
 
+/**
+ * Laplacian smoothing of the per-vertex quality, over the same neighbour graph
+ * the coordinate smoother uses.
+ *
+ * Written as a gather into a scratch buffer and copied back per step, so the
+ * result does not depend on the order the vertices happen to be visited in.
+ */
+export function vertexQualityLaplacian(m: CMeshO, step = 1): void {
+	if (m.vn === 0) return;
+	const neighbours = vertexNeighbours(m);
+	for (let i = 0; i < step; i++) {
+		const next = Float64Array.from(m.vertQuality);
+		for (let v = 0; v < m.vertSize; v++) {
+			if (m.isVertD(v) || neighbours[v].length === 0) continue;
+			let sum = 0;
+			for (const w of neighbours[v]) sum += m.vertQuality[w];
+			next[v] = sum / neighbours[v].length;
+		}
+		m.vertQuality.set(next);
+	}
+	m.imark++;
+}
+
+/** Laplacian smoothing of the per-vertex colour, channel by channel. */
+export function vertexColorLaplacian(m: CMeshO, step = 1): void {
+	if (m.vn === 0) return;
+	const neighbours = vertexNeighbours(m);
+	for (let i = 0; i < step; i++) {
+		const next = Uint32Array.from(m.vertColor);
+		for (let v = 0; v < m.vertSize; v++) {
+			if (m.isVertD(v) || neighbours[v].length === 0) continue;
+			let r = 0;
+			let g = 0;
+			let b = 0;
+			let a = 0;
+			for (const w of neighbours[v]) {
+				const c = m.vertColor[w];
+				r += c & 0xff;
+				g += (c >>> 8) & 0xff;
+				b += (c >>> 16) & 0xff;
+				a += (c >>> 24) & 0xff;
+			}
+			const n = neighbours[v].length;
+			next[v] = pack(r / n, g / n, b / n, a / n);
+		}
+		m.vertColor.set(next);
+	}
+	m.imark++;
+}
+
+/**
+ * Laplacian smoothing of the face normals, averaging across shared edges.
+ *
+ * "FF" in upstream's name: neighbours are the (at most three) faces across
+ * this face's edges, not the faces sharing a vertex. A border edge simply has
+ * no neighbour to contribute.
+ */
+export function faceNormalLaplacianFF(m: CMeshO, step = 1): void {
+	if (m.fn === 0) return;
+	if (m.ffFace === null) UpdateTopology.faceFace(m);
+	for (let i = 0; i < step; i++) {
+		const next = Float64Array.from(m.faceNormal);
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			let x = m.faceNormal[3 * f];
+			let y = m.faceNormal[3 * f + 1];
+			let z = m.faceNormal[3 * f + 2];
+			let count = 1;
+			for (let e = 0; e < 3; e++) {
+				if (m.isBorderFF(f, e)) continue;
+				const g = m.ffp(f, e);
+				if (g < 0 || m.isFaceD(g)) continue;
+				x += m.faceNormal[3 * g];
+				y += m.faceNormal[3 * g + 1];
+				z += m.faceNormal[3 * g + 2];
+				count++;
+			}
+			next[3 * f] = x / count;
+			next[3 * f + 1] = y / count;
+			next[3 * f + 2] = z / count;
+		}
+		m.faceNormal.set(next);
+	}
+	m.imark++;
+}
+
+function pack(r: number, g: number, b: number, a: number): number {
+	const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+	return (clamp(r) | (clamp(g) << 8) | (clamp(b) << 16) | (clamp(a) << 24)) >>> 0;
+}
+
+/** The set of vertices sharing an edge with each vertex. */
+function vertexNeighbours(m: CMeshO): number[][] {
+	const sets: Array<Set<number>> = Array.from({ length: m.vertSize }, () => new Set<number>());
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let k = 0; k < 3; k++) {
+			const a = m.fv(f, k);
+			const b = m.fv(f, (k + 1) % 3);
+			sets[a].add(b);
+			sets[b].add(a);
+		}
+	}
+	return sets.map((s) => [...s]);
+}
+
 export const Smooth = {
 	vertexCoordLaplacian,
 	vertexCoordTaubin,
 	vertexCoordLaplacianHC,
 	vertexCoordScaleDependentLaplacian,
+	vertexQualityLaplacian,
+	vertexColorLaplacian,
+	faceNormalLaplacianFF,
 } as const;

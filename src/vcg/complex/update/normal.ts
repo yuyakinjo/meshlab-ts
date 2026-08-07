@@ -79,6 +79,66 @@ export function perVertex(m: CMeshO): void {
 	}
 }
 
+/**
+ * Per-vertex normals as the plain mean of the incident faces' *unit* normals.
+ *
+ * The one scheme with no weighting at all, which makes it the one that a
+ * dense fan of slivers can skew: ten thin triangles on one side of a vertex
+ * outvote one large one on the other.
+ */
+export function perVertexSimpleAverage(m: CMeshO): void {
+	perVertexClear(m);
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		faceNormalOf(m, f, scratch);
+		const len = Math.hypot(scratch[0], scratch[1], scratch[2]);
+		if (len === 0) continue;
+		for (let k = 0; k < 3; k++) {
+			addAt(
+				m.vertNormal,
+				m.faceVert[3 * f + k],
+				scratch[0] / len,
+				scratch[1] / len,
+				scratch[2] / len,
+			);
+		}
+	}
+}
+
+/**
+ * Nelson Max's weighting: each face counts for `1 / (|e1|² · |e2|²)` times its
+ * unnormalised normal, where the two edges are the ones meeting at the vertex.
+ *
+ * The point of it is exactness on a sphere — the weights are chosen so that a
+ * polyhedron inscribed in a sphere reproduces the sphere's normal at every
+ * vertex, whatever the triangulation.
+ *
+ * Weights for Computing Vertex Normals from Facet Normals, N. Max, JGT 1999.
+ */
+export function perVertexNelsonMaxWeighted(m: CMeshO): void {
+	perVertexClear(m);
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		faceNormalOf(m, f, scratch);
+		for (let k = 0; k < 3; k++) {
+			const v = m.faceVert[3 * f + k];
+			const a = m.faceVert[3 * f + ((k + 1) % 3)];
+			const b = m.faceVert[3 * f + ((k + 2) % 3)];
+			const e1 = (m.vx(a) - m.vx(v)) ** 2 + (m.vy(a) - m.vy(v)) ** 2 + (m.vz(a) - m.vz(v)) ** 2;
+			const e2 = (m.vx(b) - m.vx(v)) ** 2 + (m.vy(b) - m.vy(v)) ** 2 + (m.vz(b) - m.vz(v)) ** 2;
+			const denominator = e1 * e2;
+			if (denominator === 0) continue;
+			addAt(
+				m.vertNormal,
+				v,
+				scratch[0] / denominator,
+				scratch[1] / denominator,
+				scratch[2] / denominator,
+			);
+		}
+	}
+}
+
 export function normalizePerVertex(m: CMeshO): void {
 	for (let v = 0; v < m.vertSize; v++) {
 		if (m.isVertD(v)) continue;
@@ -156,6 +216,8 @@ export const UpdateNormal = {
 	perVertex,
 	perVertexClear,
 	perVertexAngleWeighted,
+	perVertexSimpleAverage,
+	perVertexNelsonMaxWeighted,
 	normalizePerVertex,
 	perVertexPerFace,
 	perVertexNormalizedPerFaceNormalized,
