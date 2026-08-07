@@ -363,3 +363,20 @@ describe("orientation and hole closing together", () => {
 		}
 	});
 });
+
+describe("Close Holes: RefineHole", () => {
+	test("refuses rather than silently ignoring the request", () => {
+		// The parameter is accepted for API compatibility but the refinement
+		// is not implemented. Quietly closing the hole unrefined would leave
+		// the caller believing they got an evenly-spaced patch, which is the
+		// exact failure this project refuses everywhere else.
+		expect(() => apply(sphereWithHoles(5), "Close Holes", { RefineHole: true })).toThrow(
+			/not implemented yet/,
+		);
+	});
+
+	test("RefineHole=false is the default and closes the hole", () => {
+		const { out } = apply(sphereWithHoles(5), "Close Holes", { RefineHole: false });
+		expect(out.closed_holes).toBe(5);
+	});
+});

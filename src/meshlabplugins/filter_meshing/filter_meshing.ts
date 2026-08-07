@@ -26,7 +26,7 @@ import {
 	type PostConditionBox,
 } from "../../common/plugins/interfaces/filter_plugin.ts";
 import type { CallBackPos } from "../../common/utilities/callback.ts";
-import { MLException } from "../../common/utilities/ml_exception.ts";
+import { MLException, MLNotImplementedException } from "../../common/utilities/ml_exception.ts";
 import { Allocator } from "../../vcg/complex/allocator.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
 import type { CMeshO } from "../../vcg/complex/cmesho.ts";
@@ -563,6 +563,18 @@ export class FilterMeshing extends FilterPlugin {
 							'Run "Repair non Manifold Edges" first.',
 					);
 				}
+				// Refinement subdivides the cap so it is evenly spaced rather
+				// than a fan of long thin triangles. It is not implemented yet,
+				// and quietly ignoring the request would leave the caller
+				// believing they got a refined patch. Refuse instead.
+				if (params.getBool("RefineHole")) {
+					throw new MLNotImplementedException(
+						"Close Holes with RefineHole=true (the hole is closed, but refining the patch " +
+							"is not implemented yet; pass RefineHole=false to close it unrefined)",
+						this.pluginName(),
+					);
+				}
+
 				// The ear scoring reads vertex normals to tell convex ears from
 				// concave ones, so they have to be current before filling.
 				m.updateBoxAndNormals();
