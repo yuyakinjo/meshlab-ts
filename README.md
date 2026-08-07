@@ -10,14 +10,22 @@ runtime.
 
 ## Status
 
-Tier 0 (kernel, plugin framework, filter registry, PLY/STL I/O). Filters are being implemented tier
-by tier. **Every MeshLab filter is present in the registry from day one**; the ones that are not
-implemented yet throw `MLNotImplementedException` rather than silently doing nothing.
+**Tier 0 is complete**: mesh kernel, adjacency, plugin framework, filter registry and PLY/STL I/O.
+Filters themselves are implemented tier by tier from here.
+
+All **282 MeshLab filters are registered from day one** — the number and the names are extracted
+from the C++ sources rather than transcribed. The ones without an implementation yet throw
+`MLNotImplementedException` when applied, so a missing filter is never mistaken for a filter that
+did nothing.
 
 ```bash
-bun run bin/meshlab-ts list          # every registered filter, with its class and status
+bun run bin/meshlab-ts list --class Cleaning
 bun run bin/meshlab-ts info "Close Holes"
+bun run bin/meshlab-ts apply "Remove Duplicate Vertices" in.stl -o out.stl
 ```
+
+Filters can be named either the way MeshLab shows them (`"Close Holes"`) or the way PyMeshLab does
+(`meshing_close_holes`); both resolve to the same filter.
 
 ## Development
 
@@ -44,6 +52,31 @@ of truth for filter names and parameter defaults. No code is copied from it.
 - **Preconditions and postconditions are enforced by the framework.** In C++ this is the GUI's job,
   which means headless callers lose it. Here `FilterExecutor` checks `getPreConditions()`,
   satisfies `getRequirements()`, and applies `postCondition()` around every filter.
+- **Unknown parameters are an error.** `applyFilter(doc, "Close Holes", { maxholesizze: 30 })`
+  raises rather than running the filter with a default and reporting success.
+- **The filter catalogue is generated, not written.** `bun run stub:gen` reads the filter names,
+  PyMeshLab names, classes and descriptions straight out of `.reference/meshlab`. 281 of the 282
+  filters override `pythonFilterName` upstream, so deriving those names instead of reading them
+  would have got almost all of them wrong.
+
+## Testing
+
+Tests are built on mathematics rather than on recorded output, because the whole point of the
+project is not needing a Python install:
+
+- **Analytic meshes** whose properties follow from closed forms — a torus is genus 1, an
+  icosahedron has area 5√3a², a Möbius strip is not orientable. The builders are themselves
+  verified first, against an independent naive implementation.
+- **Structural invariants** checked after every mutation: live counts against deleted flags, channel
+  lengths against capacity, FF rings closing, every face corner appearing exactly once in its
+  vertex's VF chain.
+- **Property-based tests** cross-validating the kernel's sorted-edge and intrusive-ring algorithms
+  against straightforward hash-map versions, over random triangle soup including non-manifold,
+  degenerate and disconnected inputs.
+
+`bun run test:prop:deep` raises the fuzzing to 5000 cases per property. There is also an opt-in
+`bun run golden:regen`, which compares against a real PyMeshLab in Docker; it refuses to run
+without `MESHLAB_TS_ALLOW_GOLDEN_REGEN=1` and is never run by CI.
 
 ## License
 
