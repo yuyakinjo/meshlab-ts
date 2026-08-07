@@ -331,7 +331,7 @@ describe("the filter", () => {
 		// channel because that is where the density went.
 		expect(pm.isVisible()).toBe(false);
 		expect(pm.hasDataMask(MeshElement.MM_VERTQUALITY)).toBe(true);
-		expect(out.face_number).toBe(pm.cm.fn);
+		expect(out.face_number as number).toBe(pm.cm.fn);
 		expect(computeFacts(pm.cm).watertight).toBe(true);
 	});
 

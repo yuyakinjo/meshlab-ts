@@ -9,7 +9,8 @@ import { readFileSync } from "node:fs";
 import { FilterScript } from "../common/filterscript.ts";
 import { MeshLabKernel } from "../common/meshlab_kernel.ts";
 import { MeshDocument } from "../common/ml_document/mesh_document.ts";
-import { filterArityToString } from "../common/plugins/filter_arity.ts";
+import { MeshElement } from "../common/ml_document/mesh_element.ts";
+import { FilterArity, filterArityToString } from "../common/plugins/filter_arity.ts";
 import { filterClassToString } from "../common/plugins/filter_class.ts";
 import { MLException } from "../common/utilities/ml_exception.ts";
 
@@ -18,9 +19,14 @@ const USAGE = `meshlab-ts — a TypeScript port of MeshLab
 Usage:
   meshlab-ts list [--class <name>] [--implemented|--todo] [--json] [pattern]
   meshlab-ts info <filter>
-  meshlab-ts apply <filter> <input> -o <output> [--param key=value ...]
-  meshlab-ts script <script.mlx|.json> <input> -o <output>
+  meshlab-ts apply <filter> [input] -o <output> [--param key=value ...] [--save <channels>]
+  meshlab-ts script <script.mlx|.json> <input> -o <output> [--save <channels>]
   meshlab-ts formats
+
+Filters that create a mesh from nothing (Sphere, Torus, ...) take no input.
+--save names extra per-vertex channels to write, comma separated, from
+normals, quality and colors; without it only geometry is written. Saving a
+point cloud without --save normals leaves it unusable downstream.
 
 Filters can be named either the way MeshLab shows them ("Close Holes") or the
 way PyMeshLab does (meshing_close_holes).
@@ -29,8 +35,36 @@ Examples:
   meshlab-ts list --class Cleaning
   meshlab-ts info "Close Holes"
   meshlab-ts apply "Remove Duplicate Vertices" in.stl -o out.stl
+  meshlab-ts apply Sphere -o sphere.ply --param subdiv=4
+  meshlab-ts apply "Montecarlo Sampling" in.stl -o cloud.ply --save normals
   meshlab-ts script repair.mlx broken.stl -o fixed.stl
 `;
+
+/** Reads `--save normals,quality` into the MM_* bits {@link MeshLabKernel.saveMesh} takes. */
+function parseSaveMask(args: string[]): number | undefined {
+	const idx = args.findIndex((a) => a === "--save");
+	if (idx < 0) return undefined;
+	const spec = args[idx + 1];
+	if (spec === undefined) fail("--save needs a comma-separated channel list");
+	let mask = MeshElement.MM_VERTCOORD | MeshElement.MM_FACEVERT;
+	for (const raw of spec.split(",")) {
+		switch (raw.trim().toLowerCase()) {
+			case "normals":
+				mask |= MeshElement.MM_VERTNORMAL;
+				break;
+			case "quality":
+				mask |= MeshElement.MM_VERTQUALITY;
+				break;
+			case "colors":
+			case "colours":
+				mask |= MeshElement.MM_VERTCOLOR;
+				break;
+			default:
+				fail(`unknown --save channel "${raw.trim()}"; known: normals, quality, colors`);
+		}
+	}
+	return mask;
+}
 
 function fail(message: string): never {
 	console.error(`meshlab-ts: ${message}`);
@@ -139,9 +173,10 @@ function cmdInfo(args: string[]): void {
 
 function cmdApply(args: string[]): void {
 	const name = args[0];
-	const input = args[1];
-	if (name === undefined || input === undefined)
-		fail("apply needs a filter name and an input file");
+	if (name === undefined) fail("apply needs a filter name");
+	// A mesh-creation filter has nothing to read, so the input is optional and
+	// its slot may hold the first flag instead.
+	const input = args[1] !== undefined && !args[1].startsWith("-") ? args[1] : undefined;
 
 	const outIdx = args.findIndex((a) => a === "-o" || a === "--output");
 	const output = outIdx >= 0 ? args[outIdx + 1] : undefined;
@@ -158,14 +193,23 @@ function cmdApply(args: string[]): void {
 
 	const kernel = MeshLabKernel.default();
 	const doc = new MeshDocument();
-	kernel.loadMesh(doc, input);
-	console.error(`loaded ${input}: ${doc.mm().cm.vn} vertices, ${doc.mm().cm.fn} faces`);
+	if (input !== undefined) {
+		kernel.loadMesh(doc, input);
+		console.error(`loaded ${input}: ${doc.mm().cm.vn} vertices, ${doc.mm().cm.fn} faces`);
+	} else if (kernel.filterAction(name).arity !== FilterArity.NONE) {
+		fail(`"${name}" needs an input mesh`);
+	}
 
 	const out = kernel.applyFilter(doc, name, params);
 	for (const [k, v] of Object.entries(out)) console.error(`  ${k}: ${JSON.stringify(v)}`);
 
-	kernel.saveMesh(doc, output);
-	console.error(`wrote ${output}: ${doc.mm().cm.vn} vertices, ${doc.mm().cm.fn} faces`);
+	// A filter that produced a new layer is asking for that layer to be the
+	// result, whether or not it made it current — Screened Poisson deliberately
+	// does not, because in the GUI you want to keep looking at the point cloud.
+	const produced = typeof out.new_mesh_id === "number" ? doc.getMesh(out.new_mesh_id) : undefined;
+	const saved = produced ?? doc.mm();
+	kernel.saveMesh(doc, output, saved, {}, undefined, parseSaveMask(args));
+	console.error(`wrote ${output}: ${saved.cm.vn} vertices, ${saved.cm.fn} faces`);
 }
 
 function cmdScript(args: string[]): void {
@@ -199,7 +243,7 @@ function cmdScript(args: string[]): void {
 		console.error(`  ${i + 1}. ${step.filterName}${summary === "" ? "" : `  ${summary}`}`);
 	}
 
-	kernel.saveMesh(doc, output);
+	kernel.saveMesh(doc, output, undefined, {}, undefined, parseSaveMask(args));
 	console.error(`wrote ${output}: ${doc.mm().cm.vn} vertices, ${doc.mm().cm.fn} faces`);
 }
 

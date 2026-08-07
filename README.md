@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 and 1 are complete, and Tier 2 is under way.** 53 of MeshLab's 282 filters are
+**Tiers 0 and 1 are complete, and Tier 2 is under way.** 66 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -25,9 +25,11 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
   sampling, point-cloud simplification, Hausdorff distance
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
+- **filter_create** (13) — the platonic solids, box, sphere, sphere cap, cone/cylinder, torus,
+  annulus, spherical point clouds, and a plane fitted to a selection
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 229 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 216 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -35,6 +37,17 @@ bun run bin/meshlab-ts list --implemented
 bun run bin/meshlab-ts info "Close Holes"
 bun run bin/meshlab-ts apply "Remove Duplicate Vertices" in.stl -o out.stl
 bun run bin/meshlab-ts script repair.mlx broken.stl -o fixed.ply
+```
+
+A creation filter needs no input, and `--save` names the extra per-vertex channels to write —
+without it only geometry goes into the file, which for a point cloud means losing the normals
+that make it reconstructable:
+
+```bash
+bun run bin/meshlab-ts apply Sphere -o sphere.ply --param subdiv=4
+bun run bin/meshlab-ts apply "Montecarlo Sampling" sphere.ply -o cloud.ply --param SampleNum=20000
+bun run bin/meshlab-ts apply "Compute normals for point sets" cloud.ply -o oriented.ply --save normals
+bun run bin/meshlab-ts apply "Surface Reconstruction: Screened Poisson" oriented.ply -o solid.ply
 ```
 
 Filters can be named either the way MeshLab shows them (`"Close Holes"`) or the way PyMeshLab does

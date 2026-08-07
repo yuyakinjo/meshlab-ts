@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createStubPlugins } from "../meshlabplugins/_stub/stub_plugins.ts";
 import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
+import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
 import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
@@ -42,6 +43,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterSelect(),
 	() => new FilterUnsharp(),
 	() => new FilterLayer(),
+	() => new FilterCreate(),
 	() => new FilterSampling(),
 	() => new FilterScreenedPoisson(),
 ];
@@ -143,15 +145,32 @@ export class MeshLabKernel {
 		return this.openMeshData(doc, path, data, hit.plugin, hit.format, params);
 	}
 
-	/** Reads bytes already in memory, for callers that are not on a filesystem. */
+	/**
+	 * Reads bytes already in memory, for callers that are not on a filesystem.
+	 *
+	 * The plugin and format are worked out from `name` when they are not given,
+	 * so a caller holding bytes and a filename need not look them up.
+	 */
 	openMeshData(
 		doc: MeshDocument,
 		name: string,
 		data: Uint8Array,
-		plugin: IOPlugin,
-		format: string,
+		plugin?: IOPlugin,
+		format?: string,
 		params: Readonly<Record<string, unknown>> = {},
 	): MeshModel {
+		if (plugin === undefined || format === undefined) {
+			const hit = this.pluginManager.inputMeshPlugin(name);
+			if (hit === undefined) {
+				const { input } = this.pluginManager.supportedExtensions();
+				throw new MLIOException(
+					`no plugin can read ".${extensionOf(name)}"; supported: ${input.join(", ")}`,
+					name,
+				);
+			}
+			plugin = hit.plugin;
+			format = hit.format;
+		}
 		const m = doc.addNewMesh(name, "", true);
 		const list = plugin.initPreOpenParameter(format);
 		list.applyPlain(params);
@@ -170,8 +189,9 @@ export class MeshLabKernel {
 		mesh?: MeshModel,
 		params: Readonly<Record<string, unknown>> = {},
 		cb: CallBackPos = noCallback,
+		mask?: number,
 	): void {
-		const bytes = this.serializeMesh(doc, path, mesh, params, cb);
+		const bytes = this.serializeMesh(doc, path, mesh, params, cb, mask);
 		try {
 			writeFileSync(path, bytes);
 		} catch (cause) {
@@ -179,13 +199,23 @@ export class MeshLabKernel {
 		}
 	}
 
-	/** As {@link saveMesh}, but hands back the bytes instead of writing them. */
+	/**
+	 * As {@link saveMesh}, but hands back the bytes instead of writing them.
+	 *
+	 * `mask` names the per-element channels to write, as MeshLab's `MM_*` bits.
+	 * The default is the format's own — geometry only — because writing
+	 * whatever the mesh happens to carry would make a file's contents depend on
+	 * which filters ran earlier. A point cloud is the case that matters: it is
+	 * useless downstream without its normals, so saving one means asking for
+	 * `MM_VERTNORMAL` explicitly.
+	 */
 	serializeMesh(
 		doc: MeshDocument,
 		path: string,
 		mesh?: MeshModel,
 		params: Readonly<Record<string, unknown>> = {},
 		cb: CallBackPos = noCallback,
+		mask?: number,
 	): Uint8Array {
 		const hit = this.pluginManager.outputMeshPlugin(path);
 		if (hit === undefined) {
@@ -198,7 +228,13 @@ export class MeshLabKernel {
 		const m = mesh ?? doc.mm();
 		const list = hit.plugin.initSaveParameter(hit.format, m);
 		list.applyPlain(params);
-		const { defaultBits } = hit.plugin.exportMaskCapability(hit.format);
-		return hit.plugin.save(hit.format, path, m, defaultBits, list, cb);
+		const { capability, defaultBits } = hit.plugin.exportMaskCapability(hit.format);
+		if (mask !== undefined && (mask & ~capability) !== 0) {
+			throw new MLIOException(
+				`${hit.format} cannot store every requested channel (unsupported bits: ${mask & ~capability})`,
+				path,
+			);
+		}
+		return hit.plugin.save(hit.format, path, m, mask ?? defaultBits, list, cb);
 	}
 }
