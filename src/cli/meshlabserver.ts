@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
-import { MeshLabKernel } from "../common/meshlab_kernel.ts";
 /**
  * `meshlab-ts` — the command-line front end.
  *
  * Mirrors what `meshlabserver` is for: discovering filters and running them
  * without a GUI.
  */
+import { readFileSync } from "node:fs";
+import { FilterScript } from "../common/filterscript.ts";
+import { MeshLabKernel } from "../common/meshlab_kernel.ts";
 import { MeshDocument } from "../common/ml_document/mesh_document.ts";
 import { filterArityToString } from "../common/plugins/filter_arity.ts";
 import { filterClassToString } from "../common/plugins/filter_class.ts";
@@ -17,6 +19,7 @@ Usage:
   meshlab-ts list [--class <name>] [--implemented|--todo] [--json] [pattern]
   meshlab-ts info <filter>
   meshlab-ts apply <filter> <input> -o <output> [--param key=value ...]
+  meshlab-ts script <script.mlx|.json> <input> -o <output>
   meshlab-ts formats
 
 Filters can be named either the way MeshLab shows them ("Close Holes") or the
@@ -26,6 +29,7 @@ Examples:
   meshlab-ts list --class Cleaning
   meshlab-ts info "Close Holes"
   meshlab-ts apply "Remove Duplicate Vertices" in.stl -o out.stl
+  meshlab-ts script repair.mlx broken.stl -o fixed.stl
 `;
 
 function fail(message: string): never {
@@ -164,6 +168,41 @@ function cmdApply(args: string[]): void {
 	console.error(`wrote ${output}: ${doc.mm().cm.vn} vertices, ${doc.mm().cm.fn} faces`);
 }
 
+function cmdScript(args: string[]): void {
+	const scriptPath = args[0];
+	const input = args[1];
+	if (scriptPath === undefined || input === undefined) {
+		fail("script needs a script file and an input mesh");
+	}
+	const outIdx = args.findIndex((a) => a === "-o" || a === "--output");
+	const output = outIdx >= 0 ? args[outIdx + 1] : undefined;
+	if (output === undefined) fail("script needs -o <output>");
+
+	let text: string;
+	try {
+		text = readFileSync(scriptPath, "utf8");
+	} catch (cause) {
+		fail(`could not read ${scriptPath}: ${(cause as Error).message}`);
+	}
+	const script = FilterScript.parse(text, scriptPath);
+
+	const kernel = MeshLabKernel.default();
+	const doc = new MeshDocument();
+	const m = kernel.loadMesh(doc, input);
+	console.error(`loaded ${input}: ${m.cm.vn} vertices, ${m.cm.fn} faces`);
+
+	const { outputs } = script.run(kernel, doc);
+	for (const [i, step] of script.steps.entries()) {
+		const summary = Object.entries(outputs[i])
+			.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+			.join(" ");
+		console.error(`  ${i + 1}. ${step.filterName}${summary === "" ? "" : `  ${summary}`}`);
+	}
+
+	kernel.saveMesh(doc, output);
+	console.error(`wrote ${output}: ${doc.mm().cm.vn} vertices, ${doc.mm().cm.fn} faces`);
+}
+
 function cmdFormats(): void {
 	const { input, output } = MeshLabKernel.default().pluginManager.supportedExtensions();
 	console.log(`read:  ${input.join(", ")}`);
@@ -181,6 +220,9 @@ function main(argv: string[]): void {
 			return;
 		case "apply":
 			cmdApply(rest);
+			return;
+		case "script":
+			cmdScript(rest);
 			return;
 		case "formats":
 			cmdFormats();

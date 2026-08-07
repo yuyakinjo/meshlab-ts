@@ -10,22 +10,60 @@ runtime.
 
 ## Status
 
-**Tier 0 is complete**: mesh kernel, adjacency, plugin framework, filter registry and PLY/STL I/O.
-Filters themselves are implemented tier by tier from here.
+**Tiers 0 and 1 are complete.** 43 of MeshLab's 282 filters are implemented — enough to take a
+broken STL from a 3D scanner or a bad export and turn it into a printable solid:
 
-All **282 MeshLab filters are registered from day one** — the number and the names are extracted
-from the C++ sources rather than transcribed. The ones without an implementation yet throw
-`MLNotImplementedException` when applied, so a missing filter is never mistaken for a filter that
-did nothing.
+- **filter_clean** (11) — welding, degenerate and duplicate removal, isolated pieces,
+  non-manifold edge and vertex repair, T-vertices
+- **filter_meshing** (9) — re-orientation, hole closing, QEM decimation, transforms
+- **filter_select** (11) — selection and deletion
+- **filter_measure** (4) — topological and geometric measures
+- **filter_unsharp** (4) — Laplacian, Taubin, HC and scale-dependent smoothing
+- **filter_layer** (4) — flatten, duplicate, delete, rename
+
+All **282 filters are registered from day one** — the names are extracted from the C++ sources
+rather than transcribed. The 239 without an implementation yet throw `MLNotImplementedException`
+when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
-bun run bin/meshlab-ts list --class Cleaning
+bun run bin/meshlab-ts list --implemented
 bun run bin/meshlab-ts info "Close Holes"
 bun run bin/meshlab-ts apply "Remove Duplicate Vertices" in.stl -o out.stl
+bun run bin/meshlab-ts script repair.mlx broken.stl -o fixed.ply
 ```
 
 Filters can be named either the way MeshLab shows them (`"Close Holes"`) or the way PyMeshLab does
 (`meshing_close_holes`); both resolve to the same filter.
+
+## Repairing an STL
+
+`.mlx` scripts exported from MeshLab run as they are. The order below is the one the end-to-end
+test uses, and each step is there for a reason:
+
+```ts
+new FilterScript()
+  .add("Remove Duplicate Vertices")                 // STL is an unwelded soup; nothing else
+                                                    // can see a surface until this runs
+  .add("Remove Zero Area Faces")
+  .add("Remove Duplicate Faces")
+  .add("Remove Isolated pieces (wrt Diameter)", { MinComponentDiag: 0.5 })
+  .add("Remove Unreferenced Vertices")
+  .add("Repair non Manifold Edges")                 // orientability needs edge-manifoldness
+  .add("Re-Orient all faces coherently")
+  .add("Close Holes", { MaxHoleSize: 100 })         // a hole's boundary is only well defined
+                                                    // on a manifold surface
+  .add("Invert Faces Orientation", { forceFlip: false })  // face outward, not inward
+  .add("Select None")                               // Close Holes leaves its new faces selected
+  .run(kernel, doc);
+```
+
+Two things that bite in practice, both faithful to MeshLab:
+
+- **`Close Holes` leaves the faces it created selected.** Several filters default "operate on the
+  selection" to "true if anything is selected", so without a following `Select None` the next
+  filter silently confines itself to a few cap triangles.
+- **Writing to STL un-welds the mesh again.** It is a triangle soup format; a repaired 202-vertex
+  solid comes back as 1200 vertices. Write PLY if the sharing matters, or weld again on load.
 
 ## Development
 

@@ -635,12 +635,20 @@ export class FilterMeshing extends FilterPlugin {
 				// without becoming a sphere. Say so, rather than leaving the
 				// caller to wonder why they asked for 10 and got 18.
 				if (cm.fn > targetFaceNum) {
-					doc.Log.warning(
-						`Could not reach the target of ${targetFaceNum} faces: no further collapse was ` +
-							(params.getBool("PreserveTopology")
-								? "possible without changing the topology of the mesh."
-								: "legal on this mesh."),
-					);
+					// Which of the three reasons it was matters a great deal to
+					// whoever has to fix it, so name the likely one rather than
+					// giving one vague message for all of them.
+					let why: string;
+					if (params.getBool("Selected") && result.performed === 0) {
+						why =
+							"only selected faces were eligible. Note that Close Holes leaves the faces it " +
+							'creates selected, so a preceding "Select None" is usually what is wanted.';
+					} else if (params.getBool("PreserveTopology")) {
+						why = "no further collapse was possible without changing the topology of the mesh.";
+					} else {
+						why = "no further collapse was legal on this mesh.";
+					}
+					doc.Log.warning(`Could not reach the target of ${targetFaceNum} faces: ${why}`);
 				}
 
 				return {
