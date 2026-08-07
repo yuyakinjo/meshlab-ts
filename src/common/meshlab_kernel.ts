@@ -21,6 +21,7 @@ import { FilterFunc } from "../meshlabplugins/filter_func/filter_func.ts";
 import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
+import { FilterMLS } from "../meshlabplugins/filter_mls/filter_mls.ts";
 import { FilterSampling } from "../meshlabplugins/filter_sampling/filter_sampling.ts";
 import { FilterScreenedPoisson } from "../meshlabplugins/filter_screened_poisson/filter_screened_poisson.ts";
 import { FilterSelect } from "../meshlabplugins/filter_select/filter_select.ts";
@@ -45,6 +46,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterSelect(),
 	() => new FilterUnsharp(),
 	() => new FilterLayer(),
+	() => new FilterMLS(),
 	() => new FilterColorProc(),
 	() => new FilterCreate(),
 	() => new FilterFunc(),

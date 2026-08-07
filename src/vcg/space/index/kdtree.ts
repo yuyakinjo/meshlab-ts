@@ -49,6 +49,12 @@ const LEAF_SIZE = 16;
  * MeshLab filter queries. Nodes live in flat typed arrays so a cloud of a million
  * points does not turn into a million objects.
  */
+/** One hit from {@link KdTree.withinRadius}. */
+export interface Neighbour {
+	readonly index: number;
+	readonly squaredDistance: number;
+}
+
 export class KdTree {
 	private readonly axis: Int8Array;
 	private readonly split: Float64Array;
@@ -146,6 +152,47 @@ export class KdTree {
 	 * point set and so always finds that point first. This one is for querying
 	 * from outside — comparing two clouds, for instance.
 	 */
+	/**
+	 * Every point within `radius` of a coordinate, as index/squared-distance
+	 * pairs in no particular order.
+	 *
+	 * The MLS surfaces need this rather than a k-nearest query: their weight
+	 * function has compact support, so the neighbourhood is defined by a ball
+	 * and the count varies from place to place.
+	 */
+	withinRadius(x: number, y: number, z: number, radius: number): Neighbour[] {
+		const found: Neighbour[] = [];
+		if (this.count === 0 || radius <= 0) return found;
+		const limit = radius * radius;
+		const stack: number[] = [0];
+		while (stack.length > 0) {
+			const node = stack.pop() as number;
+			const axis = this.axis[node];
+			if (axis < 0) {
+				for (let slot = this.start[node]; slot < this.end[node]; slot++) {
+					const point = this.order[slot];
+					const dx = this.positions[3 * point] - x;
+					const dy = this.positions[3 * point + 1] - y;
+					const dz = this.positions[3 * point + 2] - z;
+					const d2 = dx * dx + dy * dy + dz * dz;
+					if (d2 <= limit) found.push({ index: point, squaredDistance: d2 });
+				}
+				continue;
+			}
+			const delta = [x, y, z][axis] - this.split[node];
+			// Descend into the near side always, and into the far side only
+			// when the splitting plane itself falls inside the ball.
+			if (delta <= 0) {
+				stack.push(this.left[node]);
+				if (delta * delta <= limit) stack.push(this.right[node]);
+			} else {
+				stack.push(this.right[node]);
+				if (delta * delta <= limit) stack.push(this.left[node]);
+			}
+		}
+		return found;
+	}
+
 	nearestToPoint(x: number, y: number, z: number): number {
 		if (this.count === 0) return -1;
 		let best = -1;

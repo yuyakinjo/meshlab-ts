@@ -80,6 +80,14 @@ export {
 	writeBundlerOut,
 } from "./meshlabplugins/filter_layer/cameras.ts";
 export {
+	Apss,
+	averagePointSpacing,
+	estimateRadii,
+	MLS_DEFAULTS,
+	MlsSurface,
+	Rimls,
+} from "./meshlabplugins/filter_mls/mls_surface.ts";
+export {
 	POISSON_DEFAULTS,
 	type PoissonOptions,
 	quantile,
@@ -126,6 +134,7 @@ export {
 export { Clean } from "./vcg/complex/clean.ts";
 // Mesh kernel
 export { CMeshO, type Color4b } from "./vcg/complex/cmesho.ts";
+export { marchingTetrahedra } from "./vcg/complex/create/marching.ts";
 export { Platonic } from "./vcg/complex/create/platonic.ts";
 export {
 	CurvatureMapping,

@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 141 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 149 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -34,6 +34,8 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
   sampling, point-cloud simplification, Hausdorff distance
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
+- **filter_mls** (8) — APSS and RIMLS moving least squares surfaces: projection, marching-cubes
+  iso-surface extraction, curvature colouring, radius-from-density, small-component selection
 - **filter_func** (12) — expression-driven filters: conditional vertex and face selection,
   per-vertex/face quality, colour, normal and geometric functions, a grid generator, an
   implicit-surface extractor and user-defined refinement
@@ -48,7 +50,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 141 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 133 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -154,6 +156,10 @@ of truth for filter names and parameter defaults. No code is copied from it.
 - **Local operations live in one place.** `edge_ops.ts` holds the edge collapse, the edge flip
   and the link condition, because QEM decimation and isotropic remeshing both need them and both
   get them subtly wrong on their own.
+- **MLS surfaces have compact support, and say so.** APSS and RIMLS weight each sample by
+  `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
+  has no answer at all. Every entry point returns null there rather than extrapolating, and the
+  filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
 - **Quad meshes are triangle meshes.** VCGLib tags the diagonals introduced by triangulation as
   "faux", so a quad is two triangles sharing a faux edge. Every algorithm here keeps working on a
   quad mesh without knowing it is one. One deliberate divergence lives in `bit_quad.ts`'s caller:
