@@ -167,6 +167,12 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **Two flattening weights, because neither one wins.** `parametrization/harmonic.ts` offers mean
+  value and cotangent weights for mapping a disk into the plane. Mean value weights are always
+  positive, so Tutte's theorem applies and the result can never fold; cotangent weights minimise
+  Dirichlet energy and so preserve angles better, but an obtuse triangle contributes a negative
+  weight and the guarantee is gone. The default is mean value and the result reports whether it
+  actually came out unfolded, so a caller wanting the conformal map can check and fall back.
 - **Quad meshes are triangle meshes.** VCGLib tags the diagonals introduced by triangulation as
   "faux", so a quad is two triangles sharing a faux edge. Every algorithm here keeps working on a
   quad mesh without knowing it is one. One deliberate divergence lives in `bit_quad.ts`'s caller:

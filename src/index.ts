@@ -184,6 +184,31 @@ export {
 	type QuadricParameters,
 	quadricSimplification,
 } from "./vcg/complex/local_optimization/tri_edge_collapse_quadric.ts";
+export {
+	angleDistortion,
+	area3D,
+	areaDistortion,
+	areaUV,
+	edgeDistortion,
+	foldedNum,
+	globallyUnfolded,
+	isFolded,
+	l2StretchEnergySquared,
+	lInfStretchEnergy,
+	meshAngleDistortion,
+	meshL2Stretch,
+	meshScalingFactor,
+	signedAreaUV,
+} from "./vcg/complex/parametrization/distortion.ts";
+export {
+	type BoundaryShape,
+	boundaryLoop,
+	type DiskParametrization,
+	type DiskParametrizationOptions,
+	parametrizeDisk,
+	type WeightScheme,
+	writeWedgeUV,
+} from "./vcg/complex/parametrization/harmonic.ts";
 export { Rng, SurfaceSampling } from "./vcg/complex/point_sampling.ts";
 export { estimateNormals, type NormalOptions } from "./vcg/complex/pointcloud_normal.ts";
 export { forEachBorderStep, Pos } from "./vcg/complex/pos.ts";
