@@ -33,6 +33,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_create** (13) — the platonic solids, box, sphere, sphere cap, cone/cylinder, torus,
   annulus, spherical point clouds, and a plane fitted to a selection
 
+**PLY, STL, OBJ and OFF** are read and written, including OBJ's negative indices and all four
+of its face-corner forms, and OFF's `C`/`N` header prefixes.
+
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
 rather than transcribed. The 190 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.

@@ -280,12 +280,15 @@ describe("the kernel's I/O front door", () => {
 	test("an unsupported extension names the ones that are supported", () => {
 		const kernel = MeshLabKernel.default();
 		const doc = new MeshDocument();
-		expect(() => kernel.loadMesh(doc, "model.obj")).toThrow(/no plugin can read/);
+		// FBX is genuinely unread; OBJ and OFF used to stand in here and no
+		// longer can.
+		expect(() => kernel.loadMesh(doc, "model.fbx")).toThrow(/no plugin can read/);
 		try {
-			kernel.loadMesh(doc, "model.obj");
+			kernel.loadMesh(doc, "model.fbx");
 		} catch (err) {
-			expect((err as Error).message).toContain("PLY");
-			expect((err as Error).message).toContain("STL");
+			for (const format of ["PLY", "STL", "OBJ", "OFF"]) {
+				expect((err as Error).message, format).toContain(format);
+			}
 		}
 	});
 
