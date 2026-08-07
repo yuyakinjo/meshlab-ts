@@ -10,19 +10,24 @@ runtime.
 
 ## Status
 
-**Tiers 0 and 1 are complete.** 43 of MeshLab's 282 filters are implemented — enough to take a
-broken STL from a 3D scanner or a bad export and turn it into a printable solid:
+**Tiers 0 and 1 are complete, and Tier 2 is under way.** 53 of MeshLab's 282 filters are
+implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
+printable solid, and to go from a raw point cloud to a watertight surface:
 
 - **filter_clean** (11) — welding, degenerate and duplicate removal, isolated pieces,
   non-manifold edge and vertex repair, T-vertices
-- **filter_meshing** (9) — re-orientation, hole closing, QEM decimation, transforms
+- **filter_meshing** (11) — re-orientation, hole closing, QEM decimation, transforms,
+  point-cloud normal estimation and smoothing
 - **filter_select** (11) — selection and deletion
 - **filter_measure** (4) — topological and geometric measures
 - **filter_unsharp** (4) — Laplacian, Taubin, HC and scale-dependent smoothing
 - **filter_layer** (4) — flatten, duplicate, delete, rename
+- **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
+  sampling, point-cloud simplification, Hausdorff distance
+- **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 239 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 229 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -114,6 +119,11 @@ of truth for filter names and parameter defaults. No code is copied from it.
   PyMeshLab names, classes and descriptions straight out of `.reference/meshlab`. 281 of the 282
   filters override `pythonFilterName` upstream, so deriving those names instead of reading them
   would have got almost all of them wrong.
+- **Screened Poisson is reimplemented, not ported.** MeshLab vendors 15k lines of Kazhdan's
+  PoissonRecon; this is a trilinear multigrid solve with marching tetrahedra instead of degree-2
+  B-splines with conjugate gradients. The parameters and their meanings match, so the output is
+  geometrically equivalent rather than bit-identical — a sampled sphere, torus and box each come
+  back watertight, at the right genus, within a few percent of their true volume.
 
 ## Testing
 

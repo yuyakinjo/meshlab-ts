@@ -187,11 +187,7 @@ describe("unimplemented filters", () => {
 		// than at whatever happens to be first. These are far enough down the
 		// tiers that they will not land soon; the assertion below fails loudly
 		// with instructions if one does.
-		for (const name of [
-			"Surface Reconstruction: Screened Poisson",
-			"Mesh Boolean: Union",
-			"Parametrization: Voronoi Atlas",
-		]) {
+		for (const name of ["Mesh Boolean: Union", "Parametrization: Voronoi Atlas"]) {
 			const action = kernel.filterAction(name);
 			expect(action.implemented, `${name} is now implemented — pick another here`).toBe(false);
 			expect(() => kernel.applyFilter(doc, name), name).toThrow(MLNotImplementedException);

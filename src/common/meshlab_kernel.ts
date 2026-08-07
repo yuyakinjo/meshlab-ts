@@ -19,6 +19,7 @@ import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
 import { FilterSampling } from "../meshlabplugins/filter_sampling/filter_sampling.ts";
+import { FilterScreenedPoisson } from "../meshlabplugins/filter_screened_poisson/filter_screened_poisson.ts";
 import { FilterSelect } from "../meshlabplugins/filter_select/filter_select.ts";
 import { FilterUnsharp } from "../meshlabplugins/filter_unsharp/filter_unsharp.ts";
 import { BaseMeshIOPlugin } from "../meshlabplugins/io_base/io_base.ts";
@@ -42,6 +43,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterUnsharp(),
 	() => new FilterLayer(),
 	() => new FilterSampling(),
+	() => new FilterScreenedPoisson(),
 ];
 
 /** The I/O plugins that have real implementations. */
