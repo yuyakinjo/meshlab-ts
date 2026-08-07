@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createStubPlugins } from "../meshlabplugins/_stub/stub_plugins.ts";
 import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
+import { FilterColorProc } from "../meshlabplugins/filter_colorproc/filter_colorproc.ts";
 import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
 import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
@@ -43,6 +44,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterSelect(),
 	() => new FilterUnsharp(),
 	() => new FilterLayer(),
+	() => new FilterColorProc(),
 	() => new FilterCreate(),
 	() => new FilterSampling(),
 	() => new FilterScreenedPoisson(),

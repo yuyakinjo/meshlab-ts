@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 and 1 are complete, and Tier 2 is under way.** 71 of MeshLab's 282 filters are
+**Tiers 0 and 1 are complete, and Tier 2 is under way.** 92 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -26,11 +26,15 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
   sampling, point-cloud simplification, Hausdorff distance
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
+- **filter_colorproc** (21) — colour fill, invert, desaturate, levels, brightness/contrast/gamma,
+  thresholding, colourisation, white balance, noise, quality-to-colour ramps, quality clamping,
+  colour and quality transfer between vertices and faces, random and per-component labelling,
+  Laplacian colour smoothing, triangle-shape metrics
 - **filter_create** (13) — the platonic solids, box, sphere, sphere cap, cone/cylinder, torus,
   annulus, spherical point clouds, and a plane fitted to a selection
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 211 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 190 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
