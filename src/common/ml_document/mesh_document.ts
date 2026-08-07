@@ -12,6 +12,7 @@ import { Box3 } from "../../vcg/space/box3.ts";
 import { Log } from "../utilities/log.ts";
 import { MLException } from "../utilities/ml_exception.ts";
 import { MeshModel } from "./mesh_model.ts";
+import { RasterModel } from "./raster_model.ts";
 
 /** One entry of the applied-filter history, replayable as a script. */
 export interface FilterScriptStep {
@@ -23,6 +24,9 @@ export class MeshDocument {
 	private meshList: MeshModel[] = [];
 	private meshIdCounter = 0;
 	private currentId = -1;
+	private rasterList: RasterModel[] = [];
+	private rasterIdCounter = 0;
+	private currentRasterId = -1;
 
 	readonly Log = new Log();
 	readonly filterHistory: FilterScriptStep[] = [];
@@ -102,10 +106,66 @@ export class MeshDocument {
 		return true;
 	}
 
+	// ---- rasters ------------------------------------------------------------
+
+	rasterNumber(): number {
+		return this.rasterList.length;
+	}
+
+	/**
+	 * The current raster, or null. Unlike {@link mm} this does not throw:
+	 * a document with no rasters is the normal case, and every raster filter
+	 * upstream tests for null rather than assuming one exists.
+	 */
+	rm(): RasterModel | null {
+		if (this.currentRasterId < 0) return null;
+		return this.rasterList.find((r) => r.id() === this.currentRasterId) ?? null;
+	}
+
+	getRaster(id: number): RasterModel | undefined {
+		return this.rasterList.find((r) => r.id() === id);
+	}
+
+	rasterIterator(): readonly RasterModel[] {
+		return this.rasterList;
+	}
+
+	visibleRasters(): readonly RasterModel[] {
+		return this.rasterList.filter((r) => r.isVisible());
+	}
+
+	setCurrentRaster(id: number): void {
+		if (this.getRaster(id) === undefined) {
+			const known = this.rasterList.map((r) => r.id()).join(", ");
+			throw new MLException(`no raster with id ${id}${known === "" ? "" : ` (have ${known})`}`);
+		}
+		this.currentRasterId = id;
+	}
+
+	addNewRaster(label = "", setAsCurrent = true): RasterModel {
+		const r = new RasterModel(this.rasterIdCounter++, label);
+		this.rasterList.push(r);
+		if (setAsCurrent || this.currentRasterId < 0) this.currentRasterId = r.id();
+		return r;
+	}
+
+	delRaster(id: number): boolean {
+		const i = this.rasterList.findIndex((r) => r.id() === id);
+		if (i < 0) return false;
+		this.rasterList.splice(i, 1);
+		if (this.currentRasterId === id) {
+			this.currentRasterId = this.rasterList.length > 0 ? this.rasterList[0].id() : -1;
+		}
+		return true;
+	}
+
 	clear(): void {
 		this.meshList = [];
 		this.meshIdCounter = 0;
 		this.currentId = -1;
+		this.rasterList = [];
+		this.rasterIdCounter = 0;
+		this.currentRasterId = -1;
 		this.filterHistory.length = 0;
 		this.Log.clear();
 	}

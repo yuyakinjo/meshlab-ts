@@ -17,6 +17,7 @@ export {
 	maskWithout,
 } from "./common/ml_document/mesh_element.ts";
 export { MeshModel } from "./common/ml_document/mesh_model.ts";
+export { imageSizeOf, RasterModel, RasterPlane } from "./common/ml_document/raster_model.ts";
 // Parameters
 export * from "./common/parameters/rich_parameter.ts";
 export { RichParameterList } from "./common/parameters/rich_parameter_list.ts";
@@ -69,6 +70,15 @@ export {
 export { computePythonName } from "./common/utilities/python_name.ts";
 // The upstream filter catalogue
 export { FILTER_TABLE, type FilterTableRow } from "./meshlabplugins/_stub/filter_table.ts";
+export {
+	type AgisoftCamera,
+	type AgisoftImport,
+	applyShot,
+	readAgisoftXml,
+	readBundlerOut,
+	writeAgisoftXml,
+	writeBundlerOut,
+} from "./meshlabplugins/filter_layer/cameras.ts";
 export {
 	POISSON_DEFAULTS,
 	type PoissonOptions,
@@ -168,6 +178,7 @@ export type { Scalarm } from "./vcg/math/base.ts";
 export { type CompiledExpression, compileExpression, Expression } from "./vcg/math/expression.ts";
 export { GenNormal, type SpherePoint } from "./vcg/math/gen_normal.ts";
 export { type Matrix44, Matrix44Ops } from "./vcg/math/matrix44.ts";
+export { Camera, Extrinsics, Shot } from "./vcg/math/shot.ts";
 export { Point3 } from "./vcg/math/vec3.ts";
 export { Box3 } from "./vcg/space/box3.ts";
 export { Color4 } from "./vcg/space/color4.ts";

@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 128 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 137 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -26,7 +26,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_unsharp** (15) — Laplacian, Taubin, HC and scale-dependent smoothing, normal
   recomputation in four weighting schemes, normal and quality normalisation and smoothing,
   unsharp masking of geometry/normals/colour/quality, linear morphing
-- **filter_layer** (4) — flatten, duplicate, delete, rename
+- **filter_layer** (13) — flatten, duplicate, delete, rename, prune non-visible layers, move
+  the selected faces or vertices to a new layer, split into connected components, plus the
+  raster layers and their cameras in Bundler `.out` and Agisoft `.xml`
 - **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
   sampling, point-cloud simplification, Hausdorff distance
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
@@ -44,7 +46,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 154 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 145 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -150,6 +152,9 @@ of truth for filter names and parameter defaults. No code is copied from it.
 - **Local operations live in one place.** `edge_ops.ts` holds the edge collapse, the edge flip
   and the link condition, because QEM decimation and isotropic remeshing both need them and both
   get them subtly wrong on their own.
+- **Rasters carry a camera, not an image.** A `RasterModel` is a `Shot` plus the path to its
+  photograph; nothing decodes pixels. What is parsed is the PNG or JPEG header, because Bundler
+  stores no image size and expects the reader to recover the viewport from the image itself.
 - **The expression dialect is muParser's, not JavaScript's.** `filter_func` hands user formulas
   to muParser upstream, so `^` is exponentiation and right-associative, a unary sign binds
   tighter than `+`/`-` but looser than `^` (`-2^2` is -4, `-2*3` is -6), `log` is the natural
