@@ -190,9 +190,14 @@ export class CMeshO {
 	 * True when edge `e` of face `f` has no neighbour, using VCG's
 	 * self-reference encoding. This reads the FF adjacency, unlike
 	 * {@link isFaceB} which reads a cached flag bit.
+	 *
+	 * Both the face *and* the edge index must match. VCGLib tests only the
+	 * face, which is fine while no face shares an edge with itself — but a
+	 * degenerate face such as (v, v, v) links its own three corners into one
+	 * ring, and the face-only test would call every one of them a border.
 	 */
 	isBorderFF(f: number, e: number): boolean {
-		return this.ffFace![3 * f + e] === f;
+		return this.ffFace![3 * f + e] === f && this.ffEdge![3 * f + e] === e;
 	}
 
 	// ---- datamask ------------------------------------------------------------------

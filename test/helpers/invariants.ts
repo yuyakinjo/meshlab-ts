@@ -53,6 +53,25 @@ export function countBoundaryEdges(m: CMeshO): number {
 	return n;
 }
 
+/**
+ * True when some live face repeats a vertex index, e.g. (v, v, w).
+ *
+ * Such a face owns a self-edge (v, v), which has no direction, so "are these
+ * two faces wound the same way along this edge" has no answer. Properties that
+ * compare orientation between two implementations skip these meshes rather
+ * than enshrine one arbitrary tie-break; `Remove Zero Area Faces` is what
+ * removes them in practice.
+ */
+export function hasDegenerateFaces(m: CMeshO): boolean {
+	for (const f of liveFaces(m)) {
+		const a = m.fv(f, 0);
+		const b = m.fv(f, 1);
+		const c = m.fv(f, 2);
+		if (a === b || b === c || a === c) return true;
+	}
+	return false;
+}
+
 export function countNonManifoldEdges(m: CMeshO): number {
 	let n = 0;
 	for (const faces of edgeFaceMap(m).values()) if (faces.length > 2) n++;
@@ -344,20 +363,42 @@ export function assertAllocatorConsistent(m: CMeshO, label = "mesh"): void {
 	if (m.vfHeadFace !== null) assertVFConsistent(m, label);
 }
 
-/** FF adjacency must be a symmetric involution, with borders self-referencing. */
+/**
+ * FF adjacency must be a set of disjoint rings, one per undirected edge.
+ *
+ * Not an involution: VCGLib links *all* faces sharing an edge into a cycle, so
+ * a border is a 1-cycle, a manifold edge a 2-cycle, and an edge shared by k
+ * faces a k-cycle. Every member of a ring must agree on which two vertices the
+ * edge joins, and the ring must close.
+ */
 export function assertFFConsistent(m: CMeshO, label = "mesh"): void {
+	const endpoints = (f: number, e: number): string => {
+		const a = m.fv(f, e);
+		const b = m.fv(f, (e + 1) % 3);
+		return a < b ? `${a}_${b}` : `${b}_${a}`;
+	};
+
 	for (let f = 0; f < m.faceSize; f++) {
 		if (m.isFaceD(f)) continue;
 		for (let e = 0; e < 3; e++) {
-			const g = m.ffp(f, e);
-			const ge = m.ffi(f, e);
-			expect(g, `${label}: ff(${f},${e}) target`).toBeGreaterThanOrEqual(0);
-			expect(g, `${label}: ff(${f},${e}) target`).toBeLessThan(m.faceSize);
-			expect(m.isFaceD(g), `${label}: ff(${f},${e}) points at deleted face ${g}`).toBe(false);
-			expect(ge, `${label}: ff(${f},${e}) edge index`).toBeLessThan(3);
-			// Walking across and back must return to where we started.
-			expect(m.ffp(g, ge), `${label}: ff symmetry at (${f},${e})`).toBe(f);
-			expect(m.ffi(g, ge), `${label}: ff symmetry at (${f},${e})`).toBe(e);
+			const want = endpoints(f, e);
+			let cf = f;
+			let ce = e;
+			let steps = 0;
+			do {
+				const nf = m.ffp(cf, ce);
+				const ne = m.ffi(cf, ce);
+				expect(nf, `${label}: ff(${cf},${ce}) target`).toBeGreaterThanOrEqual(0);
+				expect(nf, `${label}: ff(${cf},${ce}) target`).toBeLessThan(m.faceSize);
+				expect(m.isFaceD(nf), `${label}: ff(${cf},${ce}) points at deleted face ${nf}`).toBe(false);
+				expect(ne, `${label}: ff(${cf},${ce}) edge index`).toBeLessThan(3);
+				expect(endpoints(nf, ne), `${label}: ff ring from (${f},${e}) changes edge`).toBe(want);
+				cf = nf;
+				ce = ne;
+				expect(++steps, `${label}: ff ring from (${f},${e}) does not close`).toBeLessThanOrEqual(
+					m.faceSize * 3,
+				);
+			} while (cf !== f || ce !== e);
 		}
 	}
 }
