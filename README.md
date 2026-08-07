@@ -35,6 +35,24 @@ bun run bin/meshlab-ts script repair.mlx broken.stl -o fixed.ply
 Filters can be named either the way MeshLab shows them (`"Close Holes"`) or the way PyMeshLab does
 (`meshing_close_holes`); both resolve to the same filter.
 
+## Using it as a dependency
+
+```bash
+bun add github:yuyakinjo/meshlab-ts
+```
+
+The package ships TypeScript source rather than a build, so a consuming
+`tsconfig.json` needs:
+
+```jsonc
+{ "compilerOptions": { "allowImportingTsExtensions": true } }
+```
+
+Everything is re-exported from the root: filters through `MeshLabKernel`, and
+the algorithms (`Clean`, `Hole`, `Smooth`, `Inertia`, `quadricSimplification`),
+the I/O (`readStl`, `writeStl`, `readPly`, `writePly`) and `FilterScript`
+directly, for callers who would rather not go through the filter layer.
+
 ## Repairing an STL
 
 `.mlx` scripts exported from MeshLab run as they are. The order below is the one the end-to-end
