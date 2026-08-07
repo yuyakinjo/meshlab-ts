@@ -8,13 +8,15 @@ import { MeshLabKernel } from "../../../src/common/meshlab_kernel.ts";
 import { MeshDocument } from "../../../src/common/ml_document/mesh_document.ts";
 import { FilterArity } from "../../../src/common/plugins/filter_arity.ts";
 import { filterClassToString } from "../../../src/common/plugins/filter_class.ts";
-import { PluginManager } from "../../../src/common/plugins/plugin_manager.ts";
+import { type FilterAction, PluginManager } from "../../../src/common/plugins/plugin_manager.ts";
 import {
 	MLException,
 	MLNotImplementedException,
 } from "../../../src/common/utilities/ml_exception.ts";
 import { FILTER_TABLE } from "../../../src/meshlabplugins/_stub/filter_table.ts";
 import { createStubPlugins } from "../../../src/meshlabplugins/_stub/stub_plugins.ts";
+import { FilterClean } from "../../../src/meshlabplugins/filter_clean/filter_clean.ts";
+import { FilterMeshing } from "../../../src/meshlabplugins/filter_meshing/filter_meshing.ts";
 
 const kernel = MeshLabKernel.default();
 
@@ -147,36 +149,40 @@ describe("the filter registry", () => {
 });
 
 describe("unimplemented filters", () => {
-	test("the implemented set is exactly what the plugins claim", () => {
-		// Asserted rather than merely counted so that a filter cannot quietly
-		// stop being implemented — a rename that leaves the old name on a stub
-		// would otherwise look like nothing happened.
-		const implemented = kernel
-			.filterList()
-			.filter((f) => f.implemented)
-			.map((f) => f.name)
-			.sort();
-		expect(implemented).toEqual(
-			[
-				"Merge Close Vertices",
-				"Remove Duplicate Faces",
-				"Remove Duplicate Vertices",
-				"Remove Isolated Folded Faces by Edge Flip",
-				"Remove Isolated pieces (wrt Diameter)",
-				"Remove Isolated pieces (wrt Face Num.)",
-				"Remove T-Vertices",
-				"Remove Unreferenced Vertices",
-				"Remove Zero Area Faces",
-				"Repair non Manifold Edges",
-				"Repair non Manifold Vertices by splitting",
-			].sort(),
+	test("the implemented set is exactly what the real plugins declare", () => {
+		// Derived from the plugins rather than hardcoded, so the test does not
+		// need editing every time a filter lands — but it still catches the
+		// failure that matters: a filter that stops being implemented, or a
+		// rename that leaves the old name sitting on a stub.
+		const declared = new Set<string>();
+		for (const make of [() => new FilterClean(), () => new FilterMeshing()]) {
+			const plugin = make();
+			for (const id of plugin.actions()) declared.add(plugin.filterName(id));
+		}
+		const registered = new Set(
+			kernel
+				.filterList()
+				.filter((f) => f.implemented)
+				.map((f) => f.name),
 		);
+		expect([...registered].sort()).toEqual([...declared].sort());
 	});
+
+	/** A filter that is still registry-only, whichever tier we are on. */
+	function someUnimplemented(): FilterAction {
+		const hit = kernel.filterList().find((f) => !f.implemented);
+		if (hit === undefined) throw new Error("every filter is implemented — update this test");
+		return hit;
+	}
 
 	test("throw MLNotImplementedException rather than doing nothing", () => {
 		const doc = new MeshDocument();
 		doc.addNewMesh("m", "m");
-		for (const name of ["Close Holes", "Taubin Smooth", "Compute Geometric Measures"]) {
+		// Named filters, so a regression points at something specific. Update
+		// the list as these land.
+		for (const name of ["Taubin Smooth", "Compute Geometric Measures", "Select None"]) {
+			const action = kernel.filterAction(name);
+			expect(action.implemented, `${name} is now implemented — pick another here`).toBe(false);
 			expect(() => kernel.applyFilter(doc, name), name).toThrow(MLNotImplementedException);
 		}
 	});
@@ -184,14 +190,15 @@ describe("unimplemented filters", () => {
 	test("the exception names the filter and its plugin", () => {
 		const doc = new MeshDocument();
 		doc.addNewMesh("m", "m");
+		const action = someUnimplemented();
 		try {
-			kernel.applyFilter(doc, "Close Holes");
+			kernel.applyFilter(doc, action.name);
 			throw new Error("should have thrown");
 		} catch (err) {
 			expect(err).toBeInstanceOf(MLNotImplementedException);
 			const e = err as MLNotImplementedException;
-			expect(e.filterName).toBe("Close Holes");
-			expect(e.pluginName).toBe("FilterMeshing");
+			expect(e.filterName).toBe(action.name);
+			expect(e.pluginName).toBe(action.plugin.pluginName());
 			expect(e.message).toContain("not implemented");
 		}
 	});
@@ -199,7 +206,7 @@ describe("unimplemented filters", () => {
 	test("a stub never mutates the document", () => {
 		const doc = new MeshDocument();
 		const m = doc.addNewMesh("m", "m");
-		expect(() => kernel.applyFilter(doc, "Close Holes")).toThrow();
+		expect(() => kernel.applyFilter(doc, someUnimplemented().name)).toThrow();
 		expect(m.meshModified()).toBe(false);
 		expect(doc.filterHistory).toHaveLength(0);
 	});

@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createStubPlugins } from "../meshlabplugins/_stub/stub_plugins.ts";
 import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
+import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
 import { BaseMeshIOPlugin } from "../meshlabplugins/io_base/io_base.ts";
 import type { MeshDocument } from "./ml_document/mesh_document.ts";
 import type { MeshModel } from "./ml_document/mesh_model.ts";
@@ -28,7 +29,10 @@ import { extensionOf } from "./utilities/file_format.ts";
 import { MLIOException } from "./utilities/ml_exception.ts";
 
 /** The filter plugins that have real implementations. */
-const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [() => new FilterClean()];
+const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
+	() => new FilterClean(),
+	() => new FilterMeshing(),
+];
 
 /** The I/O plugins that have real implementations. */
 const IO_PLUGINS: ReadonlyArray<() => IOPlugin> = [() => new BaseMeshIOPlugin()];

@@ -277,6 +277,43 @@ export function flipMesh(m: CMeshO, selected = false): void {
 	m.imark++;
 }
 
+/**
+ * The volume the mesh encloses, signed by its winding.
+ *
+ * Positive when the faces are wound outward. Only meaningful for a closed,
+ * coherently oriented surface.
+ */
+export function signedVolume(m: CMeshO): number {
+	let total = 0;
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		const a = m.fv(f, 0);
+		const b = m.fv(f, 1);
+		const c = m.fv(f, 2);
+		total +=
+			m.vx(a) * (m.vy(b) * m.vz(c) - m.vz(b) * m.vy(c)) -
+			m.vy(a) * (m.vx(b) * m.vz(c) - m.vz(b) * m.vx(c)) +
+			m.vz(a) * (m.vx(b) * m.vy(c) - m.vy(b) * m.vx(c));
+	}
+	return total / 6;
+}
+
+/**
+ * Flips the whole mesh if it is inside out, and reports whether it did.
+ *
+ * Decided by the sign of the enclosed volume, which is exact for a closed
+ * coherently oriented surface. On an open surface "outside" is not defined and
+ * the volume is meaningless, so nothing is flipped — the caller should reorient
+ * and close the holes first.
+ */
+export function flipNormalOutside(m: CMeshO): boolean {
+	if (m.fn === 0) return false;
+	if (!isWaterTight(m)) return false;
+	if (signedVolume(m) >= 0) return false;
+	flipMesh(m);
+	return true;
+}
+
 /** Swaps two of a face's vertices, and repairs the FF links that move with them. */
 function swapEdge(m: CMeshO, f: number): void {
 	// Swapping corners 1 and 2 reverses the winding; edges 0 and 2 exchange
@@ -1075,5 +1112,7 @@ export const Clean = {
 	checkOrientation,
 	isCoherentlyOrientedMesh,
 	flipMesh,
+	flipNormalOutside,
+	signedVolume,
 	orientCoherentlyMesh,
 } as const;
