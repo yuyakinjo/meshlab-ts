@@ -94,6 +94,13 @@ export {
 	reconstructScreenedPoisson,
 	trimByDensity,
 } from "./meshlabplugins/filter_screened_poisson/poisson_recon.ts";
+export {
+	dummyTexture,
+	faceUV,
+	pullPushFill,
+	rasteriseFace,
+	setFaceUV,
+} from "./meshlabplugins/filter_texture/rastering.ts";
 export { BaseMeshIOPlugin } from "./meshlabplugins/io_base/io_base.ts";
 export {
 	type ObjReadResult,
@@ -201,4 +208,6 @@ export { Camera, Extrinsics, Shot } from "./vcg/math/shot.ts";
 export { Point3 } from "./vcg/math/vec3.ts";
 export { Box3 } from "./vcg/space/box3.ts";
 export { Color4 } from "./vcg/space/color4.ts";
+export { Image } from "./vcg/space/image/image.ts";
+export { isPng, readPng, writePng } from "./vcg/space/image/png.ts";
 export { KdTree, pointBounds } from "./vcg/space/index/kdtree.ts";

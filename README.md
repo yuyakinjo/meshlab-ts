@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 149 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 157 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -34,6 +34,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
   sampling, point-cloud simplification, Hausdorff distance
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
+- **filter_texture** (8 of 9) — per-vertex/per-wedge UV conversion with seam splitting, flat-plane
+  and trivial per-triangle parametrisation, texture assignment, and baking vertex colour, normals,
+  quality or another mesh's texture into a texture map
 - **filter_mls** (8) — APSS and RIMLS moving least squares surfaces: projection, marching-cubes
   iso-surface extraction, curvature colouring, radius-from-density, small-component selection
 - **filter_func** (12) — expression-driven filters: conditional vertex and face selection,
@@ -46,11 +49,11 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_create** (13) — the platonic solids, box, sphere, sphere cap, cone/cylinder, torus,
   annulus, spherical point clouds, and a plane fitted to a selection
 
-**PLY, STL, OBJ and OFF** are read and written, including OBJ's negative indices and all four
+**PLY, STL, OBJ and OFF** are read and written, and **PNG** for textures, including OBJ's negative indices and all four
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 133 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 125 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -156,6 +159,10 @@ of truth for filter names and parameter defaults. No code is copied from it.
 - **Local operations live in one place.** `edge_ops.ts` holds the edge collapse, the edge flip
   and the link condition, because QEM decimation and isotropic remeshing both need them and both
   get them subtly wrong on their own.
+- **PNG is the only image format.** Textures are read and written through a codec built on
+  `node:zlib` — 8-bit greyscale, RGB, palette, grey+alpha and RGBA on the way in, always RGBA on
+  the way out. Interlaced and 16-bit files are refused by name rather than half-decoded, and a
+  JPEG is refused outright: a wrong-looking texture is much harder to diagnose than a clear error.
 - **MLS surfaces have compact support, and say so.** APSS and RIMLS weight each sample by
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
