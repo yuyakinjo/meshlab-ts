@@ -105,6 +105,8 @@ export {
 } from "./meshlabplugins/io_base/stl.ts";
 export { Allocator } from "./vcg/complex/allocator.ts";
 export { Clean } from "./vcg/complex/clean.ts";
+// Mesh kernel
+export { CMeshO, type Color4b } from "./vcg/complex/cmesho.ts";
 export { Platonic } from "./vcg/complex/create/platonic.ts";
 export {
 	buildVertexFaces,
@@ -117,6 +119,10 @@ export {
 	sharedFaces,
 	triQuality,
 } from "./vcg/complex/edge_ops.ts";
+export { borderBit, FaceFlag, fauxBit, VertexFlag } from "./vcg/complex/flags.ts";
+// Algorithms, for callers that want them directly rather than through a filter
+export { type EarStrategy, type FillHoleOptions, Hole } from "./vcg/complex/hole.ts";
+export { Inertia, type MassProperties } from "./vcg/complex/inertia.ts";
 export {
 	clusteringDecimation,
 	IsotropicRemeshing,
@@ -125,12 +131,6 @@ export {
 	type RemeshOptions,
 	type RemeshResult,
 } from "./vcg/complex/isotropic_remeshing.ts";
-// Mesh kernel
-export { CMeshO, type Color4b } from "./vcg/complex/cmesho.ts";
-export { borderBit, FaceFlag, fauxBit, VertexFlag } from "./vcg/complex/flags.ts";
-// Algorithms, for callers that want them directly rather than through a filter
-export { type EarStrategy, type FillHoleOptions, Hole } from "./vcg/complex/hole.ts";
-export { Inertia, type MassProperties } from "./vcg/complex/inertia.ts";
 export {
 	type DecimateResult,
 	defaultQuadricParameters,
