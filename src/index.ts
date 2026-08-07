@@ -109,6 +109,18 @@ export { Clean } from "./vcg/complex/clean.ts";
 export { CMeshO, type Color4b } from "./vcg/complex/cmesho.ts";
 export { Platonic } from "./vcg/complex/create/platonic.ts";
 export {
+	CurvatureMapping,
+	CurvatureType,
+	curvatureToScalar,
+	discreteCurvature,
+	meanAndGaussian,
+	principalCurvatures,
+	principalDirections,
+	principalDirectionsFitting,
+	type ScalarCurvature,
+	UpdateCurvature,
+} from "./vcg/complex/curvature.ts";
+export {
 	buildVertexFaces,
 	collapseEdge,
 	EdgeOps,

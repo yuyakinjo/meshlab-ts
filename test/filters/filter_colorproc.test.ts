@@ -536,12 +536,13 @@ describe("registration", () => {
 	});
 
 	test("the ones that need more than geometry stay unimplemented", () => {
-		// Textures are not loaded, curvature is not computed, and histogram
-		// equalisation has not been written — better to say so.
+		// Textures are not loaded and histogram equalisation has not been
+		// written — better to say so. (Discrete Curvatures used to be on this
+		// list; it landed with the curvature module.)
 		for (const name of [
 			"Transfer Color: Texture to Vertex",
-			"Discrete Curvatures",
 			"Equalize Vertex Color",
+			"Saturate Vertex Quality",
 			"Perlin color",
 		]) {
 			expect(kernel.filterAction(name).implemented, name).toBe(false);

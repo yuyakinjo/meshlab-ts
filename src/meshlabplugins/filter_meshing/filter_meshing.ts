@@ -30,6 +30,7 @@ import { MLException, MLNotImplementedException } from "../../common/utilities/m
 import { Allocator } from "../../vcg/complex/allocator.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
 import type { CMeshO } from "../../vcg/complex/cmesho.ts";
+import { UpdateCurvature as Curvature } from "../../vcg/complex/curvature.ts";
 import { Hole } from "../../vcg/complex/hole.ts";
 import { Inertia } from "../../vcg/complex/inertia.ts";
 import { IsotropicRemeshing } from "../../vcg/complex/isotropic_remeshing.ts";
@@ -43,6 +44,7 @@ import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdatePosition } from "../../vcg/complex/update/position.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
 import { Matrix44Ops } from "../../vcg/math/matrix44.ts";
+import { colorRamp } from "../../vcg/space/color4.ts";
 
 export const FP = {
 	FP_REORIENT: 0,
@@ -61,6 +63,7 @@ export const FP = {
 	FP_MIDPOINT: 13,
 	FP_EXPLICIT_ISOTROPIC_REMESHING: 14,
 	FP_CLUSTERING: 15,
+	FP_COMPUTE_PRINC_CURV_DIR: 16,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -157,6 +160,21 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 			"discretizes them based on the cells of this grid",
 		filterClass: FilterClass.Remeshing,
 		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_COMPUTE_PRINC_CURV_DIR]: {
+		name: "Compute curvature principal directions",
+		pythonName: "compute_curvature_principal_directions_per_vertex",
+		info:
+			"Compute the principal directions of curvature with several algorithms.<br>" +
+			'<b>Taubin</b>: <i>"Estimating the tensor of curvature of a surface from a polyhedral ' +
+			'approximation"</i>, Gabriel Taubin, ICCV 1995<br><b>Quadric Fitting</b>: fits a quadric ' +
+			"patch to the one-ring of every vertex and reads the curvature off it.",
+		filterClass: FilterClass.Normal | FilterClass.VertexColoring,
+		requirements:
+			MeshElement.MM_VERTCURVDIR |
+			MeshElement.MM_VERTQUALITY |
+			MeshElement.MM_VERTCOLOR |
+			MeshElement.MM_FACEFACETOPO,
 	},
 	[FP.FP_SCALE]: {
 		name: "Transform: Scale, Normalize",
@@ -451,6 +469,61 @@ export class FilterMeshing extends FilterPlugin {
 						tooltip:
 							"The size of the cell of the clustering grid. Smaller the cell finer the resulting " +
 							"mesh. For obtaining a very coarse mesh use larger values.",
+					}),
+				);
+				break;
+			}
+
+			case FP.FP_COMPUTE_PRINC_CURV_DIR: {
+				const diag = subdivisionDiagonal(m);
+				list.add(
+					new RichEnum(
+						"Method",
+						3,
+						[
+							"Taubin approximation",
+							"Principal Component Analysis",
+							"Normal Cycles",
+							"Quadric Fitting",
+							"Scale Dependent Quadric Fitting",
+						],
+						{ description: "Method:", tooltip: "Choose a method" },
+					),
+				);
+				list.add(
+					new RichEnum(
+						"CurvColorMethod",
+						0,
+						[
+							"Mean Curvature",
+							"Gaussian Curvature",
+							"Min Curvature",
+							"Max Curvature",
+							"Shape Index",
+							"CurvedNess",
+							"None",
+						],
+						{
+							description: "Quality/Color Mapping",
+							tooltip:
+								"Choose the curvature that is mapped into quality and visualized as per vertex color.",
+						},
+					),
+				);
+				list.add(
+					new RichPercentage("Scale", diag * 0.1, 0, diag, {
+						description: "Curvature Scale",
+						tooltip:
+							"This parameter is used only for scale dependent methods: 'Scale Dependent " +
+							"Quadric Fitting' and 'PCA'.",
+					}),
+				);
+				list.add(
+					new RichBool("Autoclean", true, {
+						description: "Remove Unreferenced Vertices",
+						tooltip:
+							"If selected, before starting the filter will remove any unreference vertex (for " +
+							"which curvature values are not defined)",
 					}),
 				);
 				break;
@@ -937,6 +1010,54 @@ export class FilterMeshing extends FilterPlugin {
 					`Clustered ${before.vn}/${before.fn} down to ${cm.vn}/${cm.fn} at cell size ${cellSize}`,
 				);
 				return { vertex_number: cm.vn, face_number: cm.fn };
+			}
+
+			case FP.FP_COMPUTE_PRINC_CURV_DIR: {
+				const method = params.getInt("Method");
+				if (method === 1 || method === 2 || method === 4) {
+					throw new MLNotImplementedException(
+						"Only 'Taubin approximation' and 'Quadric Fitting' are implemented; PCA, Normal " +
+							"Cycles and the scale-dependent fit are not.",
+						"FilterMeshing",
+					);
+				}
+				if (params.getBool("Autoclean")) {
+					// A vertex with no incident face has no neighbourhood to be
+					// curved in, so upstream drops those before starting.
+					const removed = Clean.removeUnreferencedVertex(cm);
+					if (removed > 0) {
+						Allocator.compactEveryVector(cm);
+						doc.Log.log(`Removed ${removed} unreferenced vertices`);
+					}
+				}
+				UpdateTopology.faceFace(cm);
+				if (method === 0) Curvature.principalDirections(cm);
+				else Curvature.principalDirectionsFitting(cm);
+
+				const mapping = params.getEnum("CurvColorMethod");
+				let min = Number.POSITIVE_INFINITY;
+				let max = Number.NEGATIVE_INFINITY;
+				for (let v = 0; v < cm.vertSize; v++) {
+					if (cm.isVertD(v)) continue;
+					const value = Curvature.curvatureToScalar(cm, v, mapping);
+					cm.vertQuality[v] = value;
+					min = Math.min(min, value);
+					max = Math.max(max, value);
+				}
+				if (mapping !== Curvature.CurvatureMapping.None) {
+					// Cropped at the 10th and 90th percentile, as upstream does,
+					// so a few spikes do not flatten the ramp.
+					const live: number[] = [];
+					for (let v = 0; v < cm.vertSize; v++) if (!cm.isVertD(v)) live.push(cm.vertQuality[v]);
+					live.sort((a, b) => a - b);
+					const lo = live[Math.floor(0.1 * (live.length - 1))];
+					const hi = live[Math.ceil(0.9 * (live.length - 1))];
+					for (let v = 0; v < cm.vertSize; v++) {
+						if (!cm.isVertD(v)) cm.vertColor[v] = colorRamp(lo, hi, cm.vertQuality[v]);
+					}
+				}
+				doc.Log.log(`Curvature mapped into quality over [${min}, ${max}]`);
+				return { min_value: min, max_value: max };
 			}
 
 			case FP.FP_QUADRIC_SIMPLIFICATION: {

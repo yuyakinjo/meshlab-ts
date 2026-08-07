@@ -10,15 +10,15 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 104 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 106 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
 - **filter_clean** (11) — welding, degenerate and duplicate removal, isolated pieces,
   non-manifold edge and vertex repair, T-vertices
-- **filter_meshing** (16) — re-orientation, hole closing, QEM decimation, transforms,
+- **filter_meshing** (17) — re-orientation, hole closing, QEM decimation, transforms,
   point-cloud normal estimation and smoothing, Loop/Butterfly/midpoint subdivision,
-  isotropic explicit remeshing, clustering decimation
+  isotropic explicit remeshing, clustering decimation, principal curvature directions
 - **filter_select** (11) — selection and deletion
 - **filter_measure** (4) — topological and geometric measures
 - **filter_unsharp** (4) — Laplacian, Taubin, HC and scale-dependent smoothing
@@ -29,10 +29,10 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_func** (12) — expression-driven filters: conditional vertex and face selection,
   per-vertex/face quality, colour, normal and geometric functions, a grid generator, an
   implicit-surface extractor and user-defined refinement
-- **filter_colorproc** (21) — colour fill, invert, desaturate, levels, brightness/contrast/gamma,
+- **filter_colorproc** (22) — colour fill, invert, desaturate, levels, brightness/contrast/gamma,
   thresholding, colourisation, white balance, noise, quality-to-colour ramps, quality clamping,
   colour and quality transfer between vertices and faces, random and per-component labelling,
-  Laplacian colour smoothing, triangle-shape metrics
+  Laplacian colour smoothing, triangle-shape metrics, discrete curvatures
 - **filter_create** (13) — the platonic solids, box, sphere, sphere cap, cone/cylinder, torus,
   annulus, spherical point clouds, and a plane fitted to a selection
 
@@ -40,7 +40,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 178 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 176 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash

@@ -35,6 +35,7 @@ import type { CallBackPos } from "../../common/utilities/callback.ts";
 import { MLException, MLNotImplementedException } from "../../common/utilities/ml_exception.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
 import type { CMeshO } from "../../vcg/complex/cmesho.ts";
+import { discreteCurvature } from "../../vcg/complex/curvature.ts";
 import { triQuality } from "../../vcg/complex/edge_ops.ts";
 import { Rng } from "../../vcg/complex/point_sampling.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
@@ -78,6 +79,7 @@ export const CP = {
 	CP_VERTEX_SMOOTH: 19,
 	CP_FACE_SMOOTH: 20,
 	CP_TRIANGLE_QUALITY: 21,
+	CP_DISCRETE_CURVATURE: 22,
 } as const;
 
 interface FilterSpec {
@@ -254,6 +256,16 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		filterClass: FilterClass.FaceColoring,
 		requirements: F_COLOR | MeshElement.MM_FACEFACETOPO,
 		postCondition: F_COLOR,
+	},
+	[CP.CP_DISCRETE_CURVATURE]: {
+		name: "Discrete Curvatures",
+		pythonName: "compute_scalar_by_discrete_curvature_per_vertex",
+		info:
+			"Colorize vertices and faces depending on the curvature of the surface around them. " +
+			"It uses the Discrete Curvature Operator of the Desbrun et al. paper.",
+		filterClass: FilterClass.VertexColoring | FilterClass.Normal,
+		requirements: V_QUALITY | V_COLOR | MeshElement.MM_FACEFACETOPO,
+		postCondition: V_QUALITY | V_COLOR,
 	},
 	[CP.CP_TRIANGLE_QUALITY]: {
 		name: "Per Face Quality according to Triangle shape and aspect ratio",
@@ -500,6 +512,26 @@ export class FilterColorProc extends FilterPlugin {
 						description: "Iteration",
 						tooltip: "the number of iteration of the smoothing algorithm",
 					}),
+				);
+				break;
+
+			case CP.CP_DISCRETE_CURVATURE:
+				list.add(
+					new RichEnum(
+						"CurvatureType",
+						0,
+						["Mean Curvature", "Gaussian Curvature", "RMS Curvature", "ABS Curvature"],
+						{
+							description: "Type:",
+							tooltip:
+								"Choose the curvature value that you want transferred onto the scalar Quality." +
+								"Mean (H) and Gaussian (K) curvature are computed according the technique " +
+								"described in the Desbrun et al. paper.<br>Absolute curvature is defined as " +
+								"|H|+|K| and RMS curvature as sqrt(4* H^2 - 2K) as explained in <br><i>Improved " +
+								"curvature estimationfor watershed segmentation of 3-dimensional meshes </i> by " +
+								"S. Pulla, A. Razdan, G. Farin. ",
+						},
+					),
 				);
 				break;
 
@@ -802,6 +834,35 @@ export class FilterColorProc extends FilterPlugin {
 					colors.set(next);
 				}
 				return { iterations };
+			}
+
+			case CP.CP_DISCRETE_CURVATURE: {
+				// Only a closed, manifold surface has a curvature everywhere;
+				// upstream refuses rather than reporting numbers from a boundary
+				// where the one-ring is not a disc.
+				if (Clean.countNonManifoldEdgeFF(cm) > 0) {
+					throw new MLException(
+						"Discrete Curvatures needs a two-manifold mesh; repair the non-manifold edges first.",
+					);
+				}
+				const values = discreteCurvature(cm, params.getEnum("CurvatureType"));
+				let min = Number.POSITIVE_INFINITY;
+				let max = Number.NEGATIVE_INFINITY;
+				for (let v = 0; v < cm.vertSize; v++) {
+					if (cm.isVertD(v)) continue;
+					cm.vertQuality[v] = values[v];
+					min = Math.min(min, values[v]);
+					max = Math.max(max, values[v]);
+				}
+				// Upstream shows the result immediately, cropped at the 10th and
+				// 90th percentile so a handful of spikes do not flatten the ramp.
+				const live = liveQuality(cm, false);
+				const cropped = resolveRange(live, min, max, 10);
+				for (let v = 0; v < cm.vertSize; v++) {
+					if (!cm.isVertD(v)) cm.vertColor[v] = colorRamp(cropped.min, cropped.max, values[v]);
+				}
+				doc.Log.log(`Curvature spans [${min}, ${max}]`);
+				return { min_value: min, max_value: max };
 			}
 
 			case CP.CP_TRIANGLE_QUALITY: {
