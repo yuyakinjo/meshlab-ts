@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 137 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 141 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -22,7 +22,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_select** (22) — selection and deletion, dilation and erosion, selection by
   vertex/face quality, by colour in RGB or HSV, by view angle, by edge length, by connectivity,
   by triangle shape and fold, and by local outlier probability
-- **filter_measure** (4) — topological and geometric measures
+- **filter_measure** (8) — topological and geometric measures, the area and perimeter of a
+  selection, quad-mesh measures over faux-tagged triangles, and per-vertex/per-face quality
+  statistics and histograms
 - **filter_unsharp** (15) — Laplacian, Taubin, HC and scale-dependent smoothing, normal
   recomputation in four weighting schemes, normal and quality normalisation and smoothing,
   unsharp masking of geometry/normals/colour/quality, linear morphing
@@ -46,7 +48,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 145 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 141 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -152,6 +154,13 @@ of truth for filter names and parameter defaults. No code is copied from it.
 - **Local operations live in one place.** `edge_ops.ts` holds the edge collapse, the edge flip
   and the link condition, because QEM decimation and isotropic remeshing both need them and both
   get them subtly wrong on their own.
+- **Quad meshes are triangle meshes.** VCGLib tags the diagonals introduced by triangulation as
+  "faux", so a quad is two triangles sharing a faux edge. Every algorithm here keeps working on a
+  quad mesh without knowing it is one. One deliberate divergence lives in `bit_quad.ts`'s caller:
+  MeshLab zeroes the quad count whenever `CountBitLargePolygons` is positive, which for a clean
+  quad mesh is always — so upstream reports zero quads for every quad mesh. We zero it only when
+  that count actually differs from the plain polygon count, which is the condition its own comment
+  describes.
 - **Rasters carry a camera, not an image.** A `RasterModel` is a `Shot` plus the path to its
   photograph; nothing decodes pixels. What is parsed is the PNG or JPEG header, because Bundler
   stores no image size and expects the reader to recover the viewport from the image itself.

@@ -114,6 +114,15 @@ export {
 	writeStl,
 } from "./meshlabplugins/io_base/stl.ts";
 export { Allocator } from "./vcg/complex/allocator.ts";
+export {
+	countBitLargePolygons,
+	countBitPolygons,
+	countBitQuads,
+	countBitTris,
+	hasConsistentPerFaceFauxFlag,
+	isBitTriQuadOnly,
+	isFFAdjacencyConsistent,
+} from "./vcg/complex/bit_quad.ts";
 export { Clean } from "./vcg/complex/clean.ts";
 // Mesh kernel
 export { CMeshO, type Color4b } from "./vcg/complex/cmesho.ts";
@@ -177,6 +186,7 @@ export { UpdateTopology } from "./vcg/complex/update/topology.ts";
 export type { Scalarm } from "./vcg/math/base.ts";
 export { type CompiledExpression, compileExpression, Expression } from "./vcg/math/expression.ts";
 export { GenNormal, type SpherePoint } from "./vcg/math/gen_normal.ts";
+export { Distribution, Histogram } from "./vcg/math/histogram.ts";
 export { type Matrix44, Matrix44Ops } from "./vcg/math/matrix44.ts";
 export { Camera, Extrinsics, Shot } from "./vcg/math/shot.ts";
 export { Point3 } from "./vcg/math/vec3.ts";
