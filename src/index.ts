@@ -69,7 +69,26 @@ export {
 export { computePythonName } from "./common/utilities/python_name.ts";
 // The upstream filter catalogue
 export { FILTER_TABLE, type FilterTableRow } from "./meshlabplugins/_stub/filter_table.ts";
+export {
+	POISSON_DEFAULTS,
+	type PoissonOptions,
+	quantile,
+	reconstructScreenedPoisson,
+	trimByDensity,
+} from "./meshlabplugins/filter_screened_poisson/poisson_recon.ts";
 export { BaseMeshIOPlugin } from "./meshlabplugins/io_base/io_base.ts";
+export {
+	type ObjReadResult,
+	type ObjSaveOptions,
+	readObj,
+	writeObj,
+} from "./meshlabplugins/io_base/obj.ts";
+export {
+	type OffReadResult,
+	type OffSaveOptions,
+	readOff,
+	writeOff,
+} from "./meshlabplugins/io_base/off.ts";
 export {
 	type PlyHeader,
 	type PlySaveOptions,
@@ -86,6 +105,26 @@ export {
 } from "./meshlabplugins/io_base/stl.ts";
 export { Allocator } from "./vcg/complex/allocator.ts";
 export { Clean } from "./vcg/complex/clean.ts";
+export { Platonic } from "./vcg/complex/create/platonic.ts";
+export {
+	buildVertexFaces,
+	collapseEdge,
+	EdgeOps,
+	type EdgePair,
+	edgePairOf,
+	flipEdge,
+	linkCondition,
+	sharedFaces,
+	triQuality,
+} from "./vcg/complex/edge_ops.ts";
+export {
+	clusteringDecimation,
+	IsotropicRemeshing,
+	isotropicRemeshing,
+	REMESH_DEFAULTS,
+	type RemeshOptions,
+	type RemeshResult,
+} from "./vcg/complex/isotropic_remeshing.ts";
 // Mesh kernel
 export { CMeshO, type Color4b } from "./vcg/complex/cmesho.ts";
 export { borderBit, FaceFlag, fauxBit, VertexFlag } from "./vcg/complex/flags.ts";
@@ -98,7 +137,15 @@ export {
 	type QuadricParameters,
 	quadricSimplification,
 } from "./vcg/complex/local_optimization/tri_edge_collapse_quadric.ts";
+export { Rng, SurfaceSampling } from "./vcg/complex/point_sampling.ts";
+export { estimateNormals, type NormalOptions } from "./vcg/complex/pointcloud_normal.ts";
 export { forEachBorderStep, Pos } from "./vcg/complex/pos.ts";
+export {
+	type EdgePredicate,
+	type Interpolator,
+	Refine,
+	type RefineOptions,
+} from "./vcg/complex/refine.ts";
 export { Smooth, type SmoothOptions } from "./vcg/complex/smooth.ts";
 export { UpdateBounding } from "./vcg/complex/update/bounding.ts";
 export { UpdateFlags } from "./vcg/complex/update/flag.ts";
@@ -106,6 +153,9 @@ export { UpdateNormal } from "./vcg/complex/update/normal.ts";
 export { UpdatePosition } from "./vcg/complex/update/position.ts";
 export { UpdateTopology } from "./vcg/complex/update/topology.ts";
 export type { Scalarm } from "./vcg/math/base.ts";
+export { GenNormal, type SpherePoint } from "./vcg/math/gen_normal.ts";
 export { type Matrix44, Matrix44Ops } from "./vcg/math/matrix44.ts";
 export { Point3 } from "./vcg/math/vec3.ts";
 export { Box3 } from "./vcg/space/box3.ts";
+export { Color4 } from "./vcg/space/color4.ts";
+export { KdTree, pointBounds } from "./vcg/space/index/kdtree.ts";
