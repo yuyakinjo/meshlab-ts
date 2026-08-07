@@ -32,6 +32,7 @@ import { Clean } from "../../vcg/complex/clean.ts";
 import type { CMeshO } from "../../vcg/complex/cmesho.ts";
 import { Hole } from "../../vcg/complex/hole.ts";
 import { Inertia } from "../../vcg/complex/inertia.ts";
+import { IsotropicRemeshing } from "../../vcg/complex/isotropic_remeshing.ts";
 import {
 	defaultQuadricParameters,
 	quadricSimplification,
@@ -58,6 +59,8 @@ export const FP = {
 	FP_LOOP_SS: 11,
 	FP_BUTTERFLY_SS: 12,
 	FP_MIDPOINT: 13,
+	FP_EXPLICIT_ISOTROPIC_REMESHING: 14,
+	FP_CLUSTERING: 15,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -135,6 +138,25 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 			"uniformly refine a mesh substituting each triangle with four smaller triangles.",
 		filterClass: FilterClass.Remeshing,
 		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_EXPLICIT_ISOTROPIC_REMESHING]: {
+		name: "Remeshing: Isotropic Explicit Remeshing",
+		pythonName: "meshing_isotropic_explicit_remeshing",
+		info:
+			"Perform a explicit remeshing of a triangular mesh, by repeatedly applying edge flip, " +
+			"collapse, relax and refine to improve aspect ratio (triangle quality) and topological " +
+			"regularity.",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_CLUSTERING]: {
+		name: "Simplification: Clustering Decimation",
+		pythonName: "meshing_decimation_clustering",
+		info:
+			"Collapse vertices by creating a three dimensional grid enveloping the mesh and " +
+			"discretizes them based on the cells of this grid",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_NONE,
 	},
 	[FP.FP_SCALE]: {
 		name: "Transform: Scale, Normalize",
@@ -336,6 +358,99 @@ export class FilterMeshing extends FilterPlugin {
 					new RichBool("Selected", selectedFaceCount(m) > 0, {
 						description: "Affect only selected faces",
 						tooltip: "If selected the filter affect only the selected faces",
+					}),
+				);
+				break;
+			}
+
+			case FP.FP_EXPLICIT_ISOTROPIC_REMESHING: {
+				const diag = subdivisionDiagonal(m);
+				list.add(
+					new RichInt("Iterations", 3, {
+						description: "Iterations",
+						tooltip: "Number of iterations of the remeshing operations to repeat on the mesh.",
+					}),
+				);
+				list.add(
+					new RichBool("Adaptive", false, {
+						description: "Adaptive remeshing",
+						tooltip: "Toggles adaptive isotropic remeshing.",
+					}),
+				);
+				list.add(
+					new RichBool("SelectedOnly", false, {
+						description: "Remesh only selected faces",
+						tooltip:
+							"If checked the remeshing operations will be applied only to the selected faces.",
+					}),
+				);
+				list.add(
+					new RichPercentage("TargetLen", diag * 0.01, 0, diag, {
+						description: "Target Length",
+						tooltip: "Sets the target length for the remeshed mesh edges.",
+					}),
+				);
+				list.add(
+					new RichFloat("FeatureDeg", 30, {
+						description: "Crease Angle",
+						tooltip:
+							"Minimum angle between faces of the original to consider the shared edge as a " +
+							"feature to be preserved.",
+					}),
+				);
+				list.add(
+					new RichBool("CheckSurfDist", true, {
+						description: "Check Surface Distance",
+						tooltip:
+							"If toggled each local operation must deviate from original mesh by [Max. surface distance]",
+					}),
+				);
+				list.add(
+					new RichPercentage("MaxSurfDist", diag * 0.01, 0, diag, {
+						description: "Max. Surface Distance",
+						tooltip: "Maximal surface deviation allowed for each local operation",
+					}),
+				);
+				for (const [name, description, tooltip] of [
+					[
+						"SplitFlag",
+						"Refine Step",
+						"If checked the remeshing operations will include a refine step.",
+					],
+					[
+						"CollapseFlag",
+						"Collapse Step",
+						"If checked the remeshing operations will include a collapse step.",
+					],
+					[
+						"SwapFlag",
+						"Edge-Swap Step",
+						"If checked the remeshing operations will include a edge-swap step, aimed at improving the vertex valence of the resulting mesh.",
+					],
+					[
+						"SmoothFlag",
+						"Smooth Step",
+						"If checked the remeshing operations will include a smoothing step, aimed at relaxing the vertex positions in a Laplacian sense.",
+					],
+					[
+						"ReprojectFlag",
+						"Reproject Step",
+						"If checked the remeshing operations will include a step to reproject the mesh vertices on the original surface.",
+					],
+				] as const) {
+					list.add(new RichBool(name, true, { description, tooltip }));
+				}
+				break;
+			}
+
+			case FP.FP_CLUSTERING: {
+				const diag = subdivisionDiagonal(m);
+				list.add(
+					new RichPercentage("Threshold", diag * 0.01, 0, diag, {
+						description: "Cell Size",
+						tooltip:
+							"The size of the cell of the clustering grid. Smaller the cell finer the resulting " +
+							"mesh. For obtaining a very coarse mesh use larger values.",
 					}),
 				);
 				break;
@@ -771,6 +886,57 @@ export class FilterMeshing extends FilterPlugin {
 					`Subdivided ${done} time(s): ${before.vn} vertices and ${before.fn} faces became ${cm.vn} and ${cm.fn}`,
 				);
 				return { iterations_done: done, vertex_number: cm.vn, face_number: cm.fn };
+			}
+
+			case FP.FP_EXPLICIT_ISOTROPIC_REMESHING: {
+				if (params.getBool("Adaptive")) {
+					throw new MLNotImplementedException(
+						"Adaptive isotropic remeshing is not implemented yet; the target length is " +
+							"applied uniformly.",
+						"FilterMeshing",
+					);
+				}
+				UpdateBounding.box(cm);
+				const diag = cm.bbox.diagonal || 1;
+				const targetLen = params.getAbsPerc("TargetLen");
+				if (!(targetLen > 0)) {
+					throw new MLException(`Target Length must be greater than zero, got ${targetLen}`);
+				}
+				const before = { vn: cm.vn, fn: cm.fn };
+				const stats = IsotropicRemeshing.isotropicRemeshing(cm, {
+					iterations: params.getInt("Iterations"),
+					targetLen,
+					featureDeg: params.getFloat("FeatureDeg"),
+					// Zero would refuse every operation, so read it as "no limit".
+					maxSurfDist: params.getAbsPerc("MaxSurfDist") || diag,
+					checkSurfDist: params.getBool("CheckSurfDist"),
+					splitFlag: params.getBool("SplitFlag"),
+					collapseFlag: params.getBool("CollapseFlag"),
+					swapFlag: params.getBool("SwapFlag"),
+					smoothFlag: params.getBool("SmoothFlag"),
+					reprojectFlag: params.getBool("ReprojectFlag"),
+					selectedOnly: params.getBool("SelectedOnly"),
+				});
+				m.updateBoxAndNormals();
+				doc.Log.log(
+					`Remeshed ${before.vn}/${before.fn} to ${cm.vn}/${cm.fn} ` +
+						`(${stats.splits} splits, ${stats.collapses} collapses, ${stats.flips} flips)`,
+				);
+				return { vertex_number: cm.vn, face_number: cm.fn, ...stats };
+			}
+
+			case FP.FP_CLUSTERING: {
+				const cellSize = params.getAbsPerc("Threshold");
+				if (!(cellSize > 0)) {
+					throw new MLException(`Cell Size must be greater than zero, got ${cellSize}`);
+				}
+				const before = { vn: cm.vn, fn: cm.fn };
+				IsotropicRemeshing.clusteringDecimation(cm, cellSize);
+				m.updateBoxAndNormals();
+				doc.Log.log(
+					`Clustered ${before.vn}/${before.fn} down to ${cm.vn}/${cm.fn} at cell size ${cellSize}`,
+				);
+				return { vertex_number: cm.vn, face_number: cm.fn };
 			}
 
 			case FP.FP_QUADRIC_SIMPLIFICATION: {

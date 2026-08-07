@@ -22,8 +22,8 @@ import {
 	quadricMinimum,
 	quadricZero,
 } from "../../math/quadric.ts";
-import { Allocator } from "../allocator.ts";
 import type { CMeshO } from "../cmesho.ts";
+import { collapseEdge, linkCondition, triQuality } from "../edge_ops.ts";
 import { LazyPriorityQueue, type OptimizationResult } from "../local_optimization.ts";
 
 /**
@@ -218,7 +218,7 @@ export function quadricSimplification(m: CMeshO, options: DecimateOptions): Deci
 			continue;
 		}
 
-		const touched = collapse(m, vertFaces, entry.u, entry.v, entry.x, entry.y, entry.z);
+		const touched = collapseEdge(m, vertFaces, entry.u, entry.v, entry.x, entry.y, entry.z);
 		quadricAdd(quadrics, entry.u, entry.v);
 		version[entry.u]++;
 		version[entry.v]++;
@@ -409,38 +409,6 @@ function mergedQuadric(quadrics: Float64Array, u: number, v: number): Float64Arr
 	return mergeScratch;
 }
 
-/** 2·area / longest-edge² for a triangle given as nine coordinates. */
-function triQuality(
-	ax: number,
-	ay: number,
-	az: number,
-	bx: number,
-	by: number,
-	bz: number,
-	cx: number,
-	cy: number,
-	cz: number,
-): number {
-	const ux = bx - ax;
-	const uy = by - ay;
-	const uz = bz - az;
-	const vx = cx - ax;
-	const vy = cy - ay;
-	const vz = cz - az;
-	const nx = uy * vz - uz * vy;
-	const ny = uz * vx - ux * vz;
-	const nz = ux * vy - uy * vx;
-	const doubleArea = Math.hypot(nx, ny, nz);
-	if (doubleArea === 0) return 0;
-	const e0 = ux * ux + uy * uy + uz * uz;
-	const e1 = vx * vx + vy * vy + vz * vz;
-	const dx = bx - cx;
-	const dy = by - cy;
-	const dz = bz - cz;
-	const e2 = dx * dx + dy * dy + dz * dz;
-	return doubleArea / Math.max(e0, e1, e2);
-}
-
 /**
  * Whether collapsing `(u, v)` onto `(x, y, z)` is allowed.
  *
@@ -513,50 +481,6 @@ function isFeasible(
 	return true;
 }
 
-/**
- * The link condition: collapsing an edge is safe exactly when the only
- * vertices adjacent to both endpoints are the ones opposite the edge.
- *
- * A common neighbour that is *not* part of a shared face means the collapse
- * would fuse two pieces of surface that only met at that vertex — closing a
- * hole or pinching a handle, either of which changes the genus.
- */
-function linkCondition(
-	m: CMeshO,
-	vertFaces: ReadonlyArray<Set<number>>,
-	u: number,
-	v: number,
-	shared: readonly number[],
-): boolean {
-	const neighboursOf = (a: number): Set<number> => {
-		const out = new Set<number>();
-		for (const f of vertFaces[a]) {
-			if (m.isFaceD(f)) continue;
-			for (let k = 0; k < 3; k++) {
-				const w = m.faceVert[3 * f + k];
-				if (w !== a) out.add(w);
-			}
-		}
-		return out;
-	};
-
-	const allowed = new Set<number>();
-	for (const f of shared) {
-		for (let k = 0; k < 3; k++) {
-			const w = m.faceVert[3 * f + k];
-			if (w !== u && w !== v) allowed.add(w);
-		}
-	}
-
-	const nu = neighboursOf(u);
-	const nv = neighboursOf(v);
-	for (const w of nu) {
-		if (w === v) continue;
-		if (nv.has(w) && !allowed.has(w)) return false;
-	}
-	return true;
-}
-
 function faceNormalUnit(m: CMeshO, f: number): [number, number, number] | null {
 	const a = m.faceVert[3 * f];
 	const b = m.faceVert[3 * f + 1];
@@ -591,48 +515,3 @@ function triNormalUnit(
  * Returns the other vertices whose neighbourhood changed, so the caller can
  * invalidate their queued costs.
  */
-function collapse(
-	m: CMeshO,
-	vertFaces: Array<Set<number>>,
-	u: number,
-	v: number,
-	x: number,
-	y: number,
-	z: number,
-): number[] {
-	const shared: number[] = [];
-	for (const f of vertFaces[u]) if (vertFaces[v].has(f)) shared.push(f);
-
-	const touched = new Set<number>();
-
-	// The faces on the collapsed edge become degenerate, so they go.
-	for (const f of shared) {
-		for (let k = 0; k < 3; k++) {
-			const w = m.faceVert[3 * f + k];
-			touched.add(w);
-			vertFaces[w].delete(f);
-		}
-		if (!m.isFaceD(f)) Allocator.deleteFace(m, f);
-	}
-
-	// Everything else that referenced v now references u.
-	for (const f of [...vertFaces[v]]) {
-		if (m.isFaceD(f)) {
-			vertFaces[v].delete(f);
-			continue;
-		}
-		for (let k = 0; k < 3; k++) {
-			if (m.faceVert[3 * f + k] === v) m.faceVert[3 * f + k] = u;
-			touched.add(m.faceVert[3 * f + k]);
-		}
-		vertFaces[u].add(f);
-	}
-	vertFaces[v].clear();
-
-	if (!m.isVertD(v)) Allocator.deleteVertex(m, v);
-	m.setVert(u, x, y, z);
-
-	touched.delete(u);
-	touched.delete(v);
-	return [...touched];
-}
