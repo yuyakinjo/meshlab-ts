@@ -1,6 +1,6 @@
 ---
 name: meshlab-ts
-description: Process, repair and measure 3D meshes with meshlab-ts, a TypeScript port of MeshLab that runs on Bun with no Python. Use when the task involves fixing a broken or non-manifold STL, making a mesh watertight/printable, converting between STL/PLY/OBJ/OFF, reconstructing a surface from a point cloud (Screened Poisson), decimating/subdividing/smoothing a mesh, measuring volume, area, genus or dimensions, or running a MeshLab .mlx filter script without installing MeshLab or PyMeshLab.
+description: Process, repair and measure 3D meshes with meshlab-ts, a TypeScript port of MeshLab that runs on Node or Bun with no Python. Use when the task involves fixing a broken or non-manifold STL, making a mesh watertight/printable, converting between STL/PLY/OBJ/OFF, reconstructing a surface from a point cloud (Screened Poisson), decimating/subdividing/smoothing a mesh, measuring volume, area, genus or dimensions, or running a MeshLab .mlx filter script without installing MeshLab or PyMeshLab.
 ---
 
 # meshlab-ts: MeshLab filters from the command line
@@ -13,11 +13,11 @@ PyMeshLab; the differences that exist are documented in the package README.
 ## Run it
 
 ```bash
-bunx meshlab-ts@latest list --implemented     # no install needed
+npx meshlab-ts@latest list --implemented      # Node >= 22; bunx works too
 ```
 
-In a project, prefer a pinned dependency (`bun add meshlab-ts`) and plain
-`bunx meshlab-ts`. Requires Bun ≥ 1.3.
+In a project, prefer a pinned dependency (`npm install meshlab-ts` /
+`bun add meshlab-ts`) and plain `npx meshlab-ts` / `npx meshlab-ts`.
 
 ## Always check a filter before applying it
 
@@ -25,9 +25,9 @@ Parameter names are case-sensitive and an unknown name **throws** rather than
 being ignored — so read the schema first, then apply:
 
 ```bash
-bunx meshlab-ts list --class Cleaning         # find candidates (or: list holes)
-bunx meshlab-ts info "Close Holes"            # parameters, defaults, tooltips
-bunx meshlab-ts apply "Close Holes" in.ply -o out.ply --param MaxHoleSize=100
+npx meshlab-ts list --class Cleaning         # find candidates (or: list holes)
+npx meshlab-ts info "Close Holes"            # parameters, defaults, tooltips
+npx meshlab-ts apply "Close Holes" in.ply -o out.ply --param MaxHoleSize=100
 ```
 
 Filters answer to both naming schemes: `"Close Holes"` (MeshLab) and
@@ -76,11 +76,11 @@ cat > repair.json <<'EOF'
   { "filterName": "Select None", "params": {} }
 ] }
 EOF
-bunx meshlab-ts script repair.json broken.stl -o fixed.ply
+npx meshlab-ts script repair.json broken.stl -o fixed.ply
 ```
 
 `.mlx` scripts exported from the MeshLab GUI run as they are:
-`bunx meshlab-ts script exported.mlx in.stl -o out.ply`.
+`npx meshlab-ts script exported.mlx in.stl -o out.ply`.
 
 Three things that bite in practice, all faithful to MeshLab:
 
@@ -97,8 +97,8 @@ Three things that bite in practice, all faithful to MeshLab:
 ## Recipe: point cloud → watertight solid
 
 ```bash
-bunx meshlab-ts apply "Compute normals for point sets" cloud.ply -o oriented.ply --save normals
-bunx meshlab-ts apply "Surface Reconstruction: Screened Poisson" oriented.ply -o solid.ply
+npx meshlab-ts apply "Compute normals for point sets" cloud.ply -o oriented.ply --save normals
+npx meshlab-ts apply "Surface Reconstruction: Screened Poisson" oriented.ply -o solid.ply
 ```
 
 - `--save normals` is mandatory on the first step: a point cloud written
@@ -114,8 +114,8 @@ bunx meshlab-ts apply "Surface Reconstruction: Screened Poisson" oriented.ply -o
 ## Recipe: inspect a mesh
 
 ```bash
-bunx meshlab-ts apply "Compute Geometric Measures" in.ply -o /tmp/ignore.ply    # volume, area, barycenter
-bunx meshlab-ts apply "Compute Topological Measures" in.ply -o /tmp/ignore.ply  # genus, holes, manifoldness
+npx meshlab-ts apply "Compute Geometric Measures" in.ply -o /tmp/ignore.ply    # volume, area, barycenter
+npx meshlab-ts apply "Compute Topological Measures" in.ply -o /tmp/ignore.ply  # genus, holes, manifoldness
 ```
 
 (`-o` is required and chooses the writer by extension — `/dev/null` is

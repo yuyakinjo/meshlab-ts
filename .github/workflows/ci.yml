@@ -23,3 +23,40 @@ jobs:
       - run: bun run lint
       - run: bun test
       - run: bun run registry:check
+
+  # The engines field claims Node works; this job is what makes that a tested
+  # statement instead of an asserted one. Bun builds dist, Node consumes it —
+  # exactly the shape an npm consumer sees.
+  node:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Node smoke test against dist
+        run: |
+          node -e '
+            import("./dist/index.js").then(async ({ MeshLabKernel, MeshDocument }) => {
+              const kernel = MeshLabKernel.default();
+              const doc = new MeshDocument();
+              kernel.applyFilter(doc, "Sphere", { subdiv: 2 });
+              kernel.applyFilter(doc, "Close Holes", {});
+              const out = kernel.applyFilter(doc, "Compute Geometric Measures");
+              if (Math.abs(out.mesh_volume - 4.047) > 0.01) throw new Error("wrong volume: " + out.mesh_volume);
+              if (kernel.filterList().length !== 282) throw new Error("registry incomplete");
+              console.log("node smoke OK:", out.mesh_volume);
+            });
+          '
+      - name: Node CLI smoke test
+        run: |
+          node bin/meshlab-ts.js apply Sphere -o /tmp/s.ply --param subdiv=2
+          node bin/meshlab-ts.js list --implemented | wc -l

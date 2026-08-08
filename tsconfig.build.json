@@ -1,0 +1,21 @@
+{
+	// The publish-time build: src -> dist as plain ESM JavaScript plus .d.ts,
+	// so Node can consume the package. Bun keeps reading the TypeScript source
+	// directly through the "bun" export condition; this build exists for
+	// everyone else.
+	//
+	// The source imports its own files with explicit .ts extensions (Bun's
+	// convention); rewriteRelativeImportExtensions turns those into .js in the
+	// emitted output, which is what makes a no-bundler build possible at all.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"outDir": "dist",
+		"rootDir": "src",
+		"declaration": true,
+		"rewriteRelativeImportExtensions": true,
+		// Node globals, not Bun's: this is the Node-facing build.
+		"types": ["node"]
+	},
+	"include": ["src"]
+}

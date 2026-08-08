@@ -193,15 +193,15 @@ Filters can be named either the way MeshLab shows them (`"Close Holes"`) or the 
 ## Using it as a dependency
 
 ```bash
-bun add github:yuyakinjo/meshlab-ts
+bun add meshlab-ts     # or: npm install meshlab-ts
 ```
 
-The package ships TypeScript source rather than a build, so a consuming
-`tsconfig.json` needs:
-
-```jsonc
-{ "compilerOptions": { "allowImportingTsExtensions": true } }
-```
+The package runs on **Node ≥ 22 and Bun ≥ 1.3**, through one exports map with
+two faces: Node (and every bundler) consumes the built ESM in `dist/` with its
+`.d.ts` types, while Bun resolves the `"bun"` export condition straight to the
+TypeScript source — no build step, no transpilation, the same zero-overhead
+path the library is developed under. The CLI works from either runtime:
+`npx meshlab-ts` or `bunx meshlab-ts`.
 
 Everything is re-exported from the root: filters through `MeshLabKernel`, and
 the algorithms (`Clean`, `Hole`, `Smooth`, `Inertia`, `quadricSimplification`),

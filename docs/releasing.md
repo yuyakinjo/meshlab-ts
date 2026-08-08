@@ -76,11 +76,13 @@ Two consequences worth knowing:
 
 ## What ships
 
-`files` in package.json pins the tarball to `src/`, `bin/`, `LICENSE` and
-`README.md` — TypeScript source, no build step, which is honest about the
-runtime: the package declares `engines.bun` and is consumed as TS by Bun.
-`npm pack --dry-run` is the audit; run it whenever `files` or the tree layout
-changes.
+`files` pins the tarball to `dist/`, `src/`, `bin/`, `.agents/`, `LICENSE`
+and `README.md`. `dist/` is built by `prepack` (`tsc -p tsconfig.build.json`),
+which npm runs automatically on every publish and pack — a stale build cannot
+ship, because there is no way to pack without rebuilding. Node consumers get
+`dist/`; Bun consumers resolve the `"bun"` export condition to `src/` and use
+the TypeScript directly. `npm pack --dry-run` is the audit; run it whenever
+`files` or the tree layout changes.
 
 `.reference/` (the 430 MB MeshLab/VCGLib clones), `test/` and the golden
 fixtures never ship.
