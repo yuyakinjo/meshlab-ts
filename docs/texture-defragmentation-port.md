@@ -120,10 +120,23 @@ just below the longest loop fills *nothing* on an annulus, where both
 boundaries are the same length — and leaves the shell silently a non-disk. The
 loops are selected explicitly instead.
 
-**Stage C — the driver.** `greedy.ts`. The stage with no exact oracle. Tested by
-monotone properties instead: total UV border length strictly decreases, chart
-count never increases, face count never changes, and a mesh whose atlas is
-already a single chart is left untouched.
+**Stage C — the driver. Done.** `parametrization/defragment.ts`, with 27 tests.
+The stage with no exact oracle — except for one case that does have one, and it
+turned out to be the test that mattered: a grid split into two charts by a pure
+translation must merge back into the grid, with an outline equal to the grid's
+own perimeter to the digit. That caught the one real bug in the stage.
+
+Everything else is monotone properties, checked across four atlases
+(translated, rotated and scaled halves, and a per-triangle-shattered sphere):
+charts never increase, no face loses its chart, the outline never grows, every
+coordinate stays finite, no face becomes degenerate, a merge only ever joins
+charts that shared a seam, and the same input gives bit-identical output.
+
+Two divergences, both deliberate. Moves are computed on a copy and committed
+only on success, rather than performed destructively and unwound on rejection
+as upstream does — so "a rejected move leaves nothing behind" is testable, and
+tested, bit for bit. And the neighbourhood allowed to move is a fixed number of
+face rings around the seam rather than upstream's offset-threshold growth.
 
 **Stage D — output.** `packing.ts`, `atlas_render.ts`, the plugin, end-to-end
 tests: no two charts overlap in the packed atlas, every face has a non-degenerate
