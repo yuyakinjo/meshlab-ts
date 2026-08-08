@@ -88,19 +88,17 @@ working, tested code rather than a half-filter.
 
 **Stage A — the self-contained mathematics. Done.** `math/mat2.ts`,
 `space/intersection2.ts`, `parametrization/matching2.ts`,
-`parametrization/arap2d.ts`, with 29 tests. Two things worth recording from it:
+`parametrization/arap2d.ts`, with 29 tests. These had the crispest invariants in
+the port and were held to them: the matching fits recover a known similarity
+*exactly* from noiseless points and are the least-squares optimum under noise,
+the grid-accelerated intersection agrees with brute force on random inputs, and
+ARAP is exactly zero on an isometry with its fitting energy decreasing every
+single iteration. Two things worth recording:
 the three matching fits all collapse to one closed-form 2×2 polar
 decomposition, so upstream's three separate Eigen paths became one function;
 and `SparseMatrix.pin` turned out to be unusable twice on one matrix, which is
 exactly what a two-coordinate solve needs — `pinMulti` now does both at once,
 and the old failure mode was silent.
-
-**Stage A (as planned) —** `matching.ts`, `intersection2.ts`,
-`arap2d.ts`. These have the crispest invariants in the whole port: a matching fit
-must recover a known similarity transform *exactly* from noiseless points; ARAP
-energy must decrease monotonically and be exactly zero on a map that is already
-isometric; segment intersection can be checked against brute force on random
-inputs. None of it depends on the rest.
 
 **Stage B — the structure.** `chart_graph.ts`, `seams.ts`, `shell.ts`. Testable by
 combinatorics: chart count against connected components of the UV-cut mesh, seam
