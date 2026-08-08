@@ -232,7 +232,7 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		postCondition: F_QUALITY,
 	},
 	[CP.CP_FACE_TO_VERTEX_QUALITY]: {
-		name: "Transfer Quality: Face to Vertexerror!",
+		name: "Transfer Quality: Face to Vertex",
 		pythonName: "compute_scalar_transfer_face_to_vertex",
 		info: "Vertex quality is computed as an average of the surrounding faces.",
 		filterClass: FilterClass.Quality,

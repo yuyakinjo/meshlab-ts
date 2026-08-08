@@ -15,6 +15,8 @@
 
 import type { CMeshO } from "./cmesho.ts";
 import { FaceFlag, fauxBit } from "./flags.ts";
+import { faceDoubleArea, perFaceNormalized } from "./update/normal.ts";
+import { faceFace } from "./update/topology.ts";
 
 function fauxMask(m: CMeshO, f: number): number {
 	return m.faceFlags[f] & FaceFlag.FAUX012;
@@ -184,4 +186,58 @@ function ffCorrectness(m: CMeshO, f: number, e: number): boolean {
 		if (++steps > 3 * m.faceSize + 3) return false;
 	} while (curF !== f || curE !== e);
 	return true;
+}
+
+/**
+ * The faces of the polygon containing `f`, found by crossing only faux edges.
+ *
+ * A polygon in this representation is a connected group of triangles joined by
+ * faux ("invisible") edges — a quad is two, a pentagon three, and so on.
+ */
+export function extractPolygon(m: CMeshO, f: number, out: number[]): void {
+	out.length = 0;
+	const stack = [f];
+	const seen = new Set<number>([f]);
+	while (stack.length > 0) {
+		const cur = stack.pop() as number;
+		out.push(cur);
+		for (let e = 0; e < 3; e++) {
+			if (!isFaux(m, cur, e)) continue;
+			if (m.ffFace === null || m.isBorderFF(cur, e)) continue;
+			const g = m.ffp(cur, e);
+			if (m.isFaceD(g) || seen.has(g)) continue;
+			seen.add(g);
+			stack.push(g);
+		}
+	}
+}
+
+/**
+ * Gives every triangle of a polygon the polygon's own normal.
+ *
+ * Area-weighted, so that a quad split into one large and one sliver triangle
+ * is not dominated by the sliver's noisier normal. Without this, a quad mesh
+ * shaded flat shows the diagonal of every quad, which is exactly the artefact
+ * faux edges exist to hide.
+ */
+export function perBitPolygonFaceNormalized(m: CMeshO): void {
+	perFaceNormalized(m);
+	if (m.ffFace === null) faceFace(m);
+	const done = new Uint8Array(m.faceSize);
+	const group: number[] = [];
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f) || done[f] === 1) continue;
+		extractPolygon(m, f, group);
+		const n = [0, 0, 0];
+		for (const g of group) {
+			const area = faceDoubleArea(m, g);
+			for (let k = 0; k < 3; k++) n[k] += m.faceNormal[3 * g + k] * area;
+		}
+		const len = Math.hypot(n[0], n[1], n[2]);
+		for (const g of group) {
+			done[g] = 1;
+			if (len === 0) continue;
+			for (let k = 0; k < 3; k++) m.faceNormal[3 * g + k] = n[k] / len;
+		}
+	}
 }

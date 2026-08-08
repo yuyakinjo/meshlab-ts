@@ -173,7 +173,7 @@ export function heatGeodesic(
 
 // ---- the discrete operators ----------------------------------------------
 
-interface Operator {
+export interface Operator {
 	/** Per vertex, the cotangent weight to each neighbour and to itself. */
 	readonly laplacian: Array<Map<number, number>>;
 	/** Barycentric vertex areas, the lumped mass matrix. */
@@ -189,7 +189,7 @@ interface Operator {
  * positive definite above. Getting that sign backwards produces a solve that
  * converges to something smooth and completely wrong.
  */
-function cotangentOperator(cm: CMeshO): Operator {
+export function cotangentOperator(cm: CMeshO): Operator {
 	const laplacian: Array<Map<number, number>> = Array.from(
 		{ length: cm.vertSize },
 		() => new Map<number, number>(),

@@ -44,7 +44,12 @@ export function marchingTetrahedra(
 	counts: readonly number[],
 	coord: (axis: number, i: number) => number,
 	index: (i: number, j: number, k: number) => number,
+	options: { discretize?: boolean } = {},
 ): CMeshO {
+	// `discretize` places every crossing at the midpoint of its edge rather
+	// than where the field really crosses zero, giving the stair-stepped
+	// surface a layer-based printer would produce.
+	const discretize = options.discretize ?? false;
 	const px: number[] = [];
 	const py: number[] = [];
 	const pz: number[] = [];
@@ -59,7 +64,7 @@ export function marchingTetrahedra(
 		const va = values[a];
 		const vb = values[b];
 		const gap = vb - va;
-		const t = gap === 0 ? 0.5 : -va / gap;
+		const t = discretize || gap === 0 ? 0.5 : -va / gap;
 		const clamped = t < 0 ? 0 : t > 1 ? 1 : t;
 		const p = [0, 1, 2].map((axis) => {
 			const from = coord(axis, ai[axis]);

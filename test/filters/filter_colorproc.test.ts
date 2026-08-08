@@ -422,7 +422,7 @@ describe("transfers between vertices and faces", () => {
 		for (let f = 0; f < cm.fn; f++) expect(cm.faceQuality?.[f]).toBeCloseTo(7, 12);
 
 		for (let v = 0; v < cm.vertSize; v++) cm.vertQuality[v] = 0;
-		kernel.applyFilter(doc, "Transfer Quality: Face to Vertexerror!", {});
+		kernel.applyFilter(doc, "Transfer Quality: Face to Vertex", {});
 		for (let v = 0; v < cm.vn; v++) expect(cm.vertQuality[v]).toBeCloseTo(7, 12);
 	});
 });

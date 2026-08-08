@@ -389,15 +389,11 @@ describe("registration", () => {
 		).toBe(0);
 	});
 
-	test("the ones needing a solver, a polygon or an attribute stay unimplemented", () => {
-		for (const name of [
-			"Re-Compute Per-Polygon Face Normals",
-			"TwoStep Smooth",
-			"Depth Smooth",
-			"Directional Geometry Preservation",
-			"Cut mesh along crease edges",
-		]) {
-			expect(kernel.filterAction(name).implemented, name).toBe(false);
-		}
+	test("every filter in the plugin is implemented", () => {
+		const pending = kernel
+			.filterList()
+			.filter((f) => f.plugin.pluginName() === "FilterUnsharp" && !f.implemented)
+			.map((f) => f.name);
+		expect(pending).toEqual([]);
 	});
 });

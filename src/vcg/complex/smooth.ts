@@ -14,8 +14,9 @@
  */
 import type { CMeshO } from "./cmesho.ts";
 import { VertexFlag } from "./flags.ts";
-import { vertexBorderFromNone } from "./update/flag.ts";
-import { UpdateTopology } from "./update/topology.ts";
+import { faceBorderFromNone, vertexBorderFromNone } from "./update/flag.ts";
+import { UpdateNormal } from "./update/normal.ts";
+import { forEachVFCorner, UpdateTopology, vertexFace } from "./update/topology.ts";
 
 /**
  * Sum of neighbour positions and neighbour count, per vertex.
@@ -408,8 +409,201 @@ function vertexNeighbours(m: CMeshO): number[][] {
 	return sets.map((s) => [...s]);
 }
 
+/**
+ * A Laplacian step that may only move vertices along the line to `viewpoint`.
+ *
+ * The point is to smooth away a scanner's depth noise without smearing the
+ * detail it got right. A time-of-flight scanner has good x/y accuracy and poor
+ * range accuracy, so the error lies almost entirely along the ray from the
+ * sensor; projecting the Laplacian displacement onto that ray removes it and
+ * leaves everything perpendicular alone.
+ *
+ * Border edges are excluded from the averaging and their endpoints pinned, so
+ * an open boundary neither drags the interior nor gets dragged.
+ */
+export function vertexCoordViewDepth(
+	m: CMeshO,
+	viewpoint: readonly number[],
+	alpha: number,
+	step = 1,
+	options: SmoothOptions = {},
+): void {
+	if (m.vn === 0) return;
+	faceBorderFromNone(m);
+	const acc = newAccumulator(m.vertSize);
+	for (let i = 0; i < step; i++) {
+		acc.sum.fill(0);
+		acc.count.fill(0);
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			for (let e = 0; e < 3; e++) {
+				if (m.isFaceB(f, e)) continue;
+				const a = m.fv(f, e);
+				const b = m.fv(f, (e + 1) % 3);
+				acc.sum[3 * a] += m.vx(b);
+				acc.sum[3 * a + 1] += m.vy(b);
+				acc.sum[3 * a + 2] += m.vz(b);
+				acc.count[a] += 1;
+				acc.sum[3 * b] += m.vx(a);
+				acc.sum[3 * b + 1] += m.vy(a);
+				acc.sum[3 * b + 2] += m.vz(a);
+				acc.count[b] += 1;
+			}
+		}
+		// A vertex on a border edge is pinned outright: its one-ring is not a
+		// disc, so the average would pull it inward along the boundary.
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			for (let e = 0; e < 3; e++) {
+				if (!m.isFaceB(f, e)) continue;
+				for (const v of [m.fv(f, e), m.fv(f, (e + 1) % 3)]) {
+					acc.count[v] = 0;
+					acc.sum[3 * v] = 0;
+					acc.sum[3 * v + 1] = 0;
+					acc.sum[3 * v + 2] = 0;
+				}
+			}
+		}
+		for (let v = 0; v < m.vertSize; v++) {
+			if (m.isVertD(v) || acc.count[v] === 0) continue;
+			if (options.smoothSelected === true && !m.isVertS(v)) continue;
+			const n = acc.count[v];
+			const target = [acc.sum[3 * v] / n, acc.sum[3 * v + 1] / n, acc.sum[3 * v + 2] / n];
+			const d = [m.vx(v) - viewpoint[0], m.vy(v) - viewpoint[1], m.vz(v) - viewpoint[2]];
+			const len = Math.hypot(d[0], d[1], d[2]);
+			if (len === 0) continue;
+			for (let k = 0; k < 3; k++) d[k] /= len;
+			const s =
+				d[0] * (target[0] - m.vx(v)) + d[1] * (target[1] - m.vy(v)) + d[2] * (target[2] - m.vz(v));
+			m.setVert(
+				v,
+				m.vx(v) + d[0] * s * alpha,
+				m.vy(v) + d[1] * s * alpha,
+				m.vz(v) + d[2] * s * alpha,
+			);
+		}
+	}
+	m.imark++;
+}
+
+/**
+ * Averages each face normal with those around its vertices, weighted by how
+ * much they already agree.
+ *
+ * The weight is `(cos θ − σ)²` for neighbours within the threshold and zero
+ * for the rest, so a face across a sharp crease contributes nothing while one
+ * on the same smooth patch contributes almost fully. That is what lets the
+ * two-step smoother flatten noise without rounding real edges off. σ is the
+ * cosine of the feature angle: 0 averages everything, 1 averages nothing.
+ */
+export function faceNormalAngleThreshold(m: CMeshO, sigma: number): void {
+	if (m.vfHeadFace === null) vertexFace(m);
+	UpdateNormal.perFaceNormalized(m);
+	const out = new Float64Array(3 * m.faceSize);
+	const seen = new Uint8Array(m.faceSize);
+	const touched: number[] = [];
+
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		touched.length = 0;
+		const sum = [0, 0, 0];
+		for (let k = 0; k < 3; k++) {
+			forEachVFCorner(m, m.fv(f, k), (g) => {
+				if (seen[g] === 1) return;
+				seen[g] = 1;
+				touched.push(g);
+				let cosang =
+					m.faceNormal[3 * g] * m.faceNormal[3 * f] +
+					m.faceNormal[3 * g + 1] * m.faceNormal[3 * f + 1] +
+					m.faceNormal[3 * g + 2] * m.faceNormal[3 * f + 2];
+				// Two faces meeting at more than 90 degrees should count for
+				// almost nothing; the clamp keeps the weight from going
+				// negative and flipping the contribution's sign.
+				cosang = Math.min(1, Math.max(0.0001, cosang));
+				if (cosang < sigma) return;
+				const w = (cosang - sigma) ** 2;
+				for (let a = 0; a < 3; a++) sum[a] += m.faceNormal[3 * g + a] * w;
+			});
+		}
+		for (const g of touched) seen[g] = 0;
+		const len = Math.hypot(sum[0], sum[1], sum[2]);
+		for (let a = 0; a < 3; a++) {
+			out[3 * f + a] = len === 0 ? m.faceNormal[3 * f + a] : sum[a] / len;
+		}
+	}
+	m.faceNormal.set(out.subarray(0, 3 * m.faceSize));
+}
+
+/**
+ * Moves each vertex onto the planes of its incident faces.
+ *
+ * Having smoothed the normals, the surface no longer passes through them; this
+ * is the second half of Belyaev and Ohtake's method, projecting each vertex
+ * onto each neighbouring face's plane and averaging the results.
+ */
+export function fastFitMesh(m: CMeshO, onlySelected = false): void {
+	if (m.vfHeadFace === null) vertexFace(m);
+	const next = new Float64Array(3 * m.vertSize);
+	for (let v = 0; v < m.vertSize; v++) {
+		if (m.isVertD(v)) continue;
+		const sum = [0, 0, 0];
+		let count = 0;
+		forEachVFCorner(m, v, (f) => {
+			const bc = [0, 0, 0];
+			for (let k = 0; k < 3; k++) {
+				const w = m.fv(f, k);
+				bc[0] += m.vx(w) / 3;
+				bc[1] += m.vy(w) / 3;
+				bc[2] += m.vz(w) / 3;
+			}
+			const s =
+				m.faceNormal[3 * f] * (bc[0] - m.vx(v)) +
+				m.faceNormal[3 * f + 1] * (bc[1] - m.vy(v)) +
+				m.faceNormal[3 * f + 2] * (bc[2] - m.vz(v));
+			for (let a = 0; a < 3; a++) sum[a] += m.faceNormal[3 * f + a] * s;
+			count++;
+		});
+		for (let a = 0; a < 3; a++) {
+			const p = a === 0 ? m.vx(v) : a === 1 ? m.vy(v) : m.vz(v);
+			next[3 * v + a] = count === 0 ? p : p + sum[a] / count;
+		}
+	}
+	for (let v = 0; v < m.vertSize; v++) {
+		if (m.isVertD(v)) continue;
+		if (onlySelected && !m.isVertS(v)) continue;
+		m.setVert(v, next[3 * v], next[3 * v + 1], next[3 * v + 2]);
+	}
+	m.imark++;
+}
+
+/**
+ * Belyaev and Ohtake's two-step ("paso doble") smoothing: smooth the normals,
+ * then move the vertices to fit them.
+ *
+ * Doing it in that order is what makes it feature-preserving. A positional
+ * smoother has no way to tell a crease from noise — both look like a large
+ * displacement — but the normal field does, because across a crease the
+ * normals genuinely disagree and the weighting above drops them.
+ */
+export function vertexCoordPasoDoble(
+	m: CMeshO,
+	normalSteps: number,
+	sigma: number,
+	fitSteps: number,
+	onlySelected = false,
+): void {
+	if (m.vn === 0) return;
+	if (m.vfHeadFace === null) vertexFace(m);
+	for (let i = 0; i < normalSteps; i++) faceNormalAngleThreshold(m, sigma);
+	for (let i = 0; i < fitSteps; i++) fastFitMesh(m, onlySelected);
+}
+
 export const Smooth = {
 	vertexCoordLaplacian,
+	vertexCoordViewDepth,
+	vertexCoordPasoDoble,
+	faceNormalAngleThreshold,
+	fastFitMesh,
 	vertexCoordTaubin,
 	vertexCoordLaplacianHC,
 	vertexCoordScaleDependentLaplacian,

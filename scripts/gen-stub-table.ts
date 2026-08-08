@@ -120,16 +120,60 @@ function functionBody(src: string, sigPattern: RegExp): string | null {
 	return null;
 }
 
-/** Joins adjacent C string literals: `"a" "b"` -> `ab`. */
+/**
+ * Joins adjacent C string literals: `"a" "b"` -> `ab`.
+ *
+ * Only the ones belonging to the *first* statement. The last `case` of a
+ * switch runs to the end of the function body, so its chunk also contains
+ * whatever follows the switch — and in several plugins that is a
+ * `return QString("Error on Foo::filterName()!")` fallback. Concatenating
+ * that onto the real name produced
+ * `"Generate Scalar Harmonic FieldError on FilterUnsharp::filterName()"`,
+ * a name no MeshLab script would ever use. Cutting at the first `;` past the
+ * first literal keeps a multi-line concatenated `filterInfo` intact while
+ * dropping anything from a later statement.
+ */
 function joinLiterals(text: string): string {
-	const parts = [...text.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]);
+	const firstQuote = text.indexOf('"');
+	if (firstQuote >= 0) {
+		const end = statementEnd(text, firstQuote);
+		if (end >= 0) text = text.slice(0, end);
+	}
+	// `[\s\S]` rather than `.` after the backslash: a C string literal may be
+	// continued across lines with a trailing backslash, and `.` stops at the
+	// newline — which ends the literal early and leaves the parse chasing
+	// mismatched quotes for the rest of the function.
+	const parts = [...text.matchAll(/"((?:[^"\\]|\\[\s\S])*)"/g)].map((m) => m[1]);
 	return parts
 		.join("")
+		.replaceAll(/\\\n\s*/g, " ")
 		.replaceAll("\\n", "\n")
 		.replaceAll("\\t", "\t")
 		.replaceAll('\\"', '"')
 		.replaceAll("\\\\", "\\")
 		.trim();
+}
+
+/**
+ * The index just past the `;` ending the statement that starts at `from`,
+ * or -1 if there is none.
+ *
+ * Skips semicolons inside string literals, which appear in more than one
+ * filter's HTML description.
+ */
+function statementEnd(text: string, from: number): number {
+	let inString = false;
+	for (let i = from; i < text.length; i++) {
+		const c = text[i];
+		if (inString) {
+			if (c === "\\") i++;
+			else if (c === '"') inString = false;
+			continue;
+		}
+		if (c === '"') inString = true;
+		else if (c === ";") return i + 1;
+	}
+	return -1;
 }
 
 /**

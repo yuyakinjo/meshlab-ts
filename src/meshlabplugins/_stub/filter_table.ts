@@ -227,7 +227,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "meshing_remove_null_faces",
 		filterClass: "Cleaning",
 		arity: "SINGLE_MESH",
-		info: "Remove null faces (the one with area equal to zero)error!",
+		info: "Remove null faces (the one with area equal to zero)",
 	},
 	{
 		pluginDir: "filter_clean",
@@ -483,11 +483,11 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pluginDir: "filter_colorproc",
 		pluginName: "FilterColorProc",
 		actionId: "CP_FACE_TO_VERTEX_QUALITY",
-		filterName: "Transfer Quality: Face to Vertexerror!",
+		filterName: "Transfer Quality: Face to Vertex",
 		pythonName: "compute_scalar_transfer_face_to_vertex",
 		filterClass: "Quality",
 		arity: "SINGLE_MESH",
-		info: "Face to Vertex quality transfererror!",
+		info: "Face to Vertex quality transfer",
 	},
 	{
 		pluginDir: "filter_colorproc",
@@ -717,7 +717,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "create_noisy_isosurface",
 		filterClass: "MeshCreation",
 		arity: "NONE",
-		info: "Create a isosurface perturbed by a noisy isosurface.error!",
+		info: "Create a isosurface perturbed by a noisy isosurface.",
 	},
 	{
 		pluginDir: "filter_cubization",
@@ -737,7 +737,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "apply_coord_developability_of_mesh",
 		filterClass: "Remeshing",
 		arity: "SINGLE_MESH",
-		info: "The filter improves the developability of the current two-manifold triangular mesh by applying an optimization process that encourages each vertex star to form an hinge or a flat piece. The resulting mesh is similar to the initial, but it is comprised of one or more developable pieces held toghether by highly regular seam curves, i.e. path of edges which vertex stars did not form an hinge or a flat spot.<br>Since small interior angles can have a negative impact on the outcome, an automatic remeshing that runs along the optimization can be enabled.<br>When the obtained design is satisfactory, one may want to refine the quality of the seams and the developability of the surfaces by alternating between regular midpoint subdivisions and further optimization rounds.<br>For more details see:<br><b>Oded Stein, Eitan Grinspun and Keenan Crane</b><br><a href=\"https://doi.org/10.1145/3197517.3201303\">'Developability of triangle meshes'</a><br>ACM Transactions on Graphics, Volume 37, Issue 4Unknown Filter",
+		info: "The filter improves the developability of the current two-manifold triangular mesh by applying an optimization process that encourages each vertex star to form an hinge or a flat piece. The resulting mesh is similar to the initial, but it is comprised of one or more developable pieces held toghether by highly regular seam curves, i.e. path of edges which vertex stars did not form an hinge or a flat spot.<br>Since small interior angles can have a negative impact on the outcome, an automatic remeshing that runs along the optimization can be enabled.<br>When the obtained design is satisfactory, one may want to refine the quality of the seams and the developability of the surfaces by alternating between regular midpoint subdivisions and further optimization rounds.<br>For more details see:<br><b>Oded Stein, Eitan Grinspun and Keenan Crane</b><br><a href=\"https://doi.org/10.1145/3197517.3201303\">'Developability of triangle meshes'</a><br>ACM Transactions on Graphics, Volume 37, Issue 4",
 	},
 	{
 		pluginDir: "filter_dirt",
@@ -757,7 +757,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "apply_coord_point_cloud_movement_over_mesh",
 		filterClass: "Remeshing",
 		arity: "SINGLE_MESH",
-		info: "Simulate the movement of a point cloud over a mesherror",
+		info: "Simulate the movement of a point cloud over a mesh",
 	},
 	{
 		pluginDir: "filter_embree",
@@ -797,7 +797,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "meshing_re_orient_faces_by_geometry",
 		filterClass: "Quality",
 		arity: "SINGLE_MESH",
-		info: "Reorient face normals by geometry.Given the input mesh, this filter uses raytracing to determine if any faces are pointing inward and corrects their orientation. The number of rays is defined by the user; the higher the number, the higher the precision, but at the cost of computation time.This filter requires two values:<ul>\t<li> the number of rays to be shot from the barycenter of each face </li>\t<li> Parity Sampling: If selected, the normal analysis will be performed using the Parity Sampling algorithm. It is suggested to use this algotirhm when the standard one (visibility sampling) faild to riorient all faces because it is used to reorient faces invisible from the outside</li></ul><b> For further details, see the reference paper: Kenshi Takayama, Alec Jacobson, Ladislav Kavan, Olga Sorkine-Hornung. </b><br> <b> A Simple Method for Correcting Facet Orientations in Polygon Meshes Based on Ray Casting. Journal of Computer Graphics Techniques 3(4), 2014.</b> This filter uses the Embree3 library by Intel.Unknown Filter",
+		info: "Reorient face normals by geometry.Given the input mesh, this filter uses raytracing to determine if any faces are pointing inward and corrects their orientation. The number of rays is defined by the user; the higher the number, the higher the precision, but at the cost of computation time.This filter requires two values:<ul>\t<li> the number of rays to be shot from the barycenter of each face </li>\t<li> Parity Sampling: If selected, the normal analysis will be performed using the Parity Sampling algorithm. It is suggested to use this algotirhm when the standard one (visibility sampling) faild to riorient all faces because it is used to reorient faces invisible from the outside</li></ul><b> For further details, see the reference paper: Kenshi Takayama, Alec Jacobson, Ladislav Kavan, Olga Sorkine-Hornung. </b><br> <b> A Simple Method for Correcting Facet Orientations in Polygon Meshes Based on Ray Casting. Journal of Computer Graphics Techniques 3(4), 2014.</b> This filter uses the Embree3 library by Intel.",
 	},
 	{
 		pluginDir: "filter_embree",
@@ -817,7 +817,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "apply_coord_craters_from_point_cloud",
 		filterClass: "Smoothing",
 		arity: "VARIABLE",
-		info: "Generates craters onto a mesh using radial functions.<br />There must be at least two layers to apply this filter:<br /><ul>    <li>the layer that contains the target mesh; we assume that this mesh is sufficiently refined;</li>    <li>the layer that contains the samples which represent the central points of craters.</li></ul>There are three radial functions available to generate craters, two of which are Gaussian and Multiquadric, and the third is a variant of multiquadric. Blending functions are also provided to blend the crater elevation towards the mesh surface. If you want the preview to work, be sure to select the target mesh layer before launching the filter. You can select this layer by clicking on it in the layer dialog.error",
+		info: "Generates craters onto a mesh using radial functions.<br />There must be at least two layers to apply this filter:<br /><ul>    <li>the layer that contains the target mesh; we assume that this mesh is sufficiently refined;</li>    <li>the layer that contains the samples which represent the central points of craters.</li></ul>There are three radial functions available to generate craters, two of which are Gaussian and Multiquadric, and the third is a variant of multiquadric. Blending functions are also provided to blend the crater elevation towards the mesh surface. If you want the preview to work, be sure to select the target mesh layer before launching the filter. You can select this layer by clicking on it in the layer dialog.",
 	},
 	{
 		pluginDir: "filter_fractal",
@@ -1017,7 +1017,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "meshing_refine_by_function",
 		filterClass: "Remeshing",
 		arity: "SINGLE_MESH",
-		info: "Refine current mesh with user defined parameters.<br>Specify a Boolean Function needed to select which edges will be cut for refinement purpose.<br>Each edge is identified with first and second vertex.<br>Arguments accepted are first and second vertex attributes:<br>filter not found!",
+		info: "Refine current mesh with user defined parameters.<br>Specify a Boolean Function needed to select which edges will be cut for refinement purpose.<br>Each edge is identified with first and second vertex.<br>Arguments accepted are first and second vertex attributes:<br>",
 	},
 	{
 		pluginDir: "filter_geodesic",
@@ -1027,7 +1027,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "compute_scalar_by_heat_geodesic_distance_from_selection_per_vertex",
 		filterClass: "VertexColoring|Quality",
 		arity: "SINGLE_MESH",
-		info: "Store in the quality field the approximated geodesic distance, computed via heat method (Crane et al.), from the selected points on the mesh surface and color the mesh accordingly. As this implementation does not use intrinsic triangulation it is very sensitive to trinagulation. First run takes longer as factorization has to be build. error!",
+		info: "Store in the quality field the approximated geodesic distance, computed via heat method (Crane et al.), from the selected points on the mesh surface and color the mesh accordingly. As this implementation does not use intrinsic triangulation it is very sensitive to trinagulation. First run takes longer as factorization has to be build.",
 	},
 	{
 		pluginDir: "filter_geodesic",
@@ -1087,7 +1087,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "get_overlapping_meshes_graph",
 		filterClass: "Measure",
 		arity: "SINGLE_MESH",
-		info: "Use an occupancy grid to see which meshes overlap between themselves.Unknown Filter",
+		info: "Use an occupancy grid to see which meshes overlap between themselves.",
 	},
 	{
 		pluginDir: "filter_img_patch_param",
@@ -1147,7 +1147,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "nxs_compress",
 		filterClass: "Other",
 		arity: "NONE",
-		info: "This filter is the equivalent of calling nxscompress, which creates a .nxz (compressed nexus) file starting from a file .nxs (uncompressed nxs). It is useful for exploring different lossy compression settings without the need of recreating the whole multiresolution structure.Unknown Filter",
+		info: "This filter is the equivalent of calling nxscompress, which creates a .nxz (compressed nexus) file starting from a file .nxs (uncompressed nxs). It is useful for exploring different lossy compression settings without the need of recreating the whole multiresolution structure.",
 	},
 	{
 		pluginDir: "filter_isoparametrization",
@@ -1177,7 +1177,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "transfer_iso_parametrization_between_meshes",
 		filterClass: "Remeshing",
 		arity: "FIXED",
-		info: "Transfer the Isoparametrization between two meshes, the two meshes must be reasonably similar and well aligned. It is useful to transfer back an isoparam onto the original mesh after having computed it on a dummy, clean watertight model.<br>error!",
+		info: "Transfer the Isoparametrization between two meshes, the two meshes must be reasonably similar and well aligned. It is useful to transfer back an isoparam onto the original mesh after having computed it on a dummy, clean watertight model.<br>",
 	},
 	{
 		pluginDir: "filter_isoparametrization",
@@ -1437,7 +1437,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "generate_boolean_xor",
 		filterClass: "Remeshing|Layer",
 		arity: "FIXED",
-		info: "symmetric difference (XOR)Unknown Filter",
+		info: "symmetric difference (XOR)",
 	},
 	{
 		pluginDir: "filter_mesh_booleans",
@@ -1907,7 +1907,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "raster_global_refinement_mutual_information",
 		filterClass: "Camera",
 		arity: "SINGLE_MESH",
-		info: "Calculate a global refinement of image registration, in order to obtain a better alignment of fine detail. It will refine only the shots associated to the active rasters, the non-active ones will be used but not refined. This filter is an implementation of Dellepiane et al. 'Global refinement of image-to-geometry registration for color projection', 2013, and it was used in Corsini et al 'Fully Automatic Registration of Image Sets on Approximate Geometry', 2013. Please cite!Unknown Filter",
+		info: "Calculate a global refinement of image registration, in order to obtain a better alignment of fine detail. It will refine only the shots associated to the active rasters, the non-active ones will be used but not refined. This filter is an implementation of Dellepiane et al. 'Global refinement of image-to-geometry registration for color projection', 2013, and it was used in Corsini et al 'Fully Automatic Registration of Image Sets on Approximate Geometry', 2013. Please cite!",
 	},
 	{
 		pluginDir: "filter_mutualinfo",
@@ -1917,7 +1917,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "raster_alignment_mutual_information",
 		filterClass: "Camera",
 		arity: "SINGLE_MESH",
-		info: 'Register an image on a 3D model using Mutual Information. This filter is an implementation of Corsini et al. \'Image-to-geometry registration: a mutual information method exploiting illumination-related geometric properties\', 2009, <a href="http://vcg.isti.cnr.it/Publications/2009/CDPS09/" target="_blank">Get link</a>Unknown Filter',
+		info: 'Register an image on a 3D model using Mutual Information. This filter is an implementation of Corsini et al. \'Image-to-geometry registration: a mutual information method exploiting illumination-related geometric properties\', 2009, <a href="http://vcg.isti.cnr.it/Publications/2009/CDPS09/" target="_blank">Get link</a>',
 	},
 	{
 		pluginDir: "filter_parametrization",
@@ -1937,7 +1937,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "compute_texcoord_parametrization_least_squares_conformal_maps",
 		filterClass: "Texture",
 		arity: "SINGLE_MESH",
-		info: "Compuites a least squares conformal maps parametrization of a mesh. Unknown Filter",
+		info: "Compuites a least squares conformal maps parametrization of a mesh.",
 	},
 	{
 		pluginDir: "filter_plymc",
@@ -1947,7 +1947,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "meshing_decimation_edge_collapse_for_marching_cube_meshes",
 		filterClass: "Remeshing",
 		arity: "SINGLE_MESH",
-		info: "A simplification/cleaning algorithm that works ONLY on meshes generated by Marching Cubes algorithm.Unknown Filter",
+		info: "A simplification/cleaning algorithm that works ONLY on meshes generated by Marching Cubes algorithm.",
 	},
 	{
 		pluginDir: "filter_plymc",
@@ -1987,7 +1987,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "compute_selection_of_visible_convex_hull_per_vertex",
 		filterClass: "Selection|PointSet",
 		arity: "SINGLE_MESH",
-		info: "Select the <b>visible points</b> in the convex hull of a point cloud, as viewed from a given viewpoint.<br>It uses the Qhull library (http://www.qhull.org/ <br><br>The algorithm used (Katz, Tal and Basri 2007) determines visibility without reconstructing a surface or estimating normals.A point is considered visible if its transformed point lies on the convex hull of a transformed points cloud from the original mesh points.Error: Unknown Filter",
+		info: "Select the <b>visible points</b> in the convex hull of a point cloud, as viewed from a given viewpoint.<br>It uses the Qhull library (http://www.qhull.org/ <br><br>The algorithm used (Katz, Tal and Basri 2007) determines visibility without reconstructing a surface or estimating normals.A point is considered visible if its transformed point lies on the convex hull of a transformed points cloud from the original mesh points.",
 	},
 	{
 		pluginDir: "filter_qhull",
@@ -2017,7 +2017,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "apply_coord_random_displacement",
 		filterClass: "Smoothing",
 		arity: "SINGLE_MESH",
-		info: "Move the vertices of the mesh of a random quantity.Unknown Filter",
+		info: "Move the vertices of the mesh of a random quantity.",
 	},
 	{
 		pluginDir: "filter_sample_gpu",
@@ -2027,7 +2027,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "save_snapshot",
 		filterClass: "RasterLayer",
 		arity: "SINGLE_MESH",
-		info: "Small useless filter added only to show how to work with a gl render context inside a filter.Unknown Filter",
+		info: "Small useless filter added only to show how to work with a gl render context inside a filter.",
 	},
 	{
 		pluginDir: "filter_sampling",
@@ -2117,7 +2117,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "generate_sampling_regular_recursive",
 		filterClass: "Sampling",
 		arity: "SINGLE_MESH",
-		info: "The bounding box is recursively partitioned in a octree style, center of bbox are considered, when the center is nearer to the surface than a given threshold it is projected on it. It works also for building offsetted samples.unknown filter!!!!",
+		info: "The bounding box is recursively partitioned in a octree style, center of bbox are considered, when the center is nearer to the surface than a given threshold it is projected on it. It works also for building offsetted samples.",
 	},
 	{
 		pluginDir: "filter_sampling",
@@ -2177,7 +2177,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "generate_surface_reconstruction_screened_poisson",
 		filterClass: "Remeshing",
 		arity: "VARIABLE",
-		info: 'This surface reconstruction algorithm creates watertight surfaces from oriented point sets.<br>The filter uses the original code of Michael Kazhdan and Matthew Bolitho implementing the algorithm described in the following paper:<br><i>Michael Kazhdan, Hugues Hoppe</i>,<br><b>"Screened Poisson surface reconstruction"</b><br>Error!',
+		info: 'This surface reconstruction algorithm creates watertight surfaces from oriented point sets.<br>The filter uses the original code of Michael Kazhdan and Matthew Bolitho implementing the algorithm described in the following paper:<br><i>Michael Kazhdan, Hugues Hoppe</i>,<br><b>"Screened Poisson surface reconstruction"</b><br>',
 	},
 	{
 		pluginDir: "filter_sdfgpu",
@@ -2417,7 +2417,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "compute_selection_point_cloud_outliers",
 		filterClass: "Selection",
 		arity: "SINGLE_MESH",
-		info: "Select the vertex classified as outlier using Local Outlier Propabilty measure described in:<br> <b>'LoOP: Local Outlier Probabilities'</b> Kriegel et al.<br>CIKM 2009Unknown filter",
+		info: "Select the vertex classified as outlier using Local Outlier Propabilty measure described in:<br> <b>'LoOP: Local Outlier Probabilities'</b> Kriegel et al.<br>CIKM 2009",
 	},
 	{
 		pluginDir: "filter_select",
@@ -2457,7 +2457,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "export_mesh_to_sketchfab",
 		filterClass: "Smoothing",
 		arity: "SINGLE_MESH",
-		info: "Upload the current layer on Sketchfab. It requires that you have an account and that you set your private API token in the preferences of MeshLab.Unknown Filter",
+		info: "Upload the current layer on Sketchfab. It requires that you have an account and that you set your private API token in the preferences of MeshLab.",
 	},
 	{
 		pluginDir: "filter_ssynth",
@@ -2467,7 +2467,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "create_mesh_by_grammar",
 		filterClass: "MeshCreation",
 		arity: "NONE",
-		info: "Structure Synth mesh creation based on Eisen Script.\n For further instruction visit http://structuresynth.sourceforge.net/reference.phperror",
+		info: "Structure Synth mesh creation based on Eisen Script.\n For further instruction visit http://structuresynth.sourceforge.net/reference.php",
 	},
 	{
 		pluginDir: "filter_texture",
@@ -2537,7 +2537,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "transfer_texture_to_color_per_vertex",
 		filterClass: "VertexColoring|Texture",
 		arity: "FIXED",
-		info: "Generates Vertex Color values picking color from a texture (same mesh or another mesh).Unknown Filter",
+		info: "Generates Vertex Color values picking color from a texture (same mesh or another mesh).",
 	},
 	{
 		pluginDir: "filter_texture",
@@ -2567,7 +2567,7 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pythonName: "apply_texmap_defragmentation",
 		filterClass: "Texture",
 		arity: "SINGLE_MESH",
-		info: ");\n\tdefault:\n\t\tassert(0);\n\t}\n\treturn QString(",
+		info: "Reduces the texture fragmentation by merging atlas charts.  The used algorithm is: <br><b>Texture Defragmentation for Photo-Reconstructed 3D Models</b><br>  <i>Andrea Maggiordomo, Paolo Cignoni and Marco Tarini</i> <br> Eurographics 2021",
 	},
 	{
 		pluginDir: "filter_trioptimize",
@@ -2633,11 +2633,11 @@ export const FILTER_TABLE: readonly FilterTableRow[] = [
 		pluginDir: "filter_unsharp",
 		pluginName: "FilterUnsharp",
 		actionId: "FP_SCALAR_HARMONIC_FIELD",
-		filterName: "Generate Scalar Harmonic FieldError on FilterUnsharp::filterName()",
+		filterName: "Generate Scalar Harmonic Field",
 		pythonName: "compute_scalar_by_scalar_harmonic_field_per_vertex",
 		filterClass: "Remeshing",
 		arity: "SINGLE_MESH",
-		info: "Generates a scalar harmonic field over the mesh. Input scalar values must be assigned to two vertices as Dirichlet boundary conditions. Applying the filter, a discrete Laplace operator generates the harmonic field values for all the mesh vertices, which are stored in the <a href='https://stackoverflow.com/questions/58610746'>quality per vertex attribute</a> of the mesh.<br>For more details see:<b>Dynamic Harmonic Fields for Surface Processing</b> by <i>Kai Xua, Hao Zhang, Daniel Cohen-Or, Yueshan Xionga</i>. Computers & Graphics, 2009 <br><a href='https://doi.org/10.1016/j.cag.2009.03.022'>doi:10.1016/j.cag.2009.03.022</a>Error on FilterUnsharp::filterInfo()!",
+		info: "Generates a scalar harmonic field over the mesh. Input scalar values must be assigned to two vertices as Dirichlet boundary conditions. Applying the filter, a discrete Laplace operator generates the harmonic field values for all the mesh vertices, which are stored in the <a href='https://stackoverflow.com/questions/58610746'>quality per vertex attribute</a> of the mesh.<br>For more details see:<b>Dynamic Harmonic Fields for Surface Processing</b> by <i>Kai Xua, Hao Zhang, Daniel Cohen-Or, Yueshan Xionga</i>. Computers & Graphics, 2009 <br><a href='https://doi.org/10.1016/j.cag.2009.03.022'>doi:10.1016/j.cag.2009.03.022</a>",
 	},
 	{
 		pluginDir: "filter_unsharp",

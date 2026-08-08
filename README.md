@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 223 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 236 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -25,14 +25,18 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_measure** (8) — topological and geometric measures, the area and perimeter of a
   selection, quad-mesh measures over faux-tagged triangles, and per-vertex/per-face quality
   statistics and histograms
-- **filter_unsharp** (15) — Laplacian, Taubin, HC and scale-dependent smoothing, normal
-  recomputation in four weighting schemes, normal and quality normalisation and smoothing,
-  unsharp masking of geometry/normals/colour/quality, linear morphing
+- **filter_unsharp** (21, complete) — Laplacian, Taubin, HC, scale-dependent, depth-constrained
+  and feature-preserving two-step smoothing, normal recomputation in four weighting schemes plus
+  per-polygon normals, normal and quality normalisation and smoothing, unsharp masking of
+  geometry/normals/colour/quality, linear morphing, directional geometry preservation, cutting
+  along crease edges, and scalar harmonic fields
 - **filter_layer** (13) — flatten, duplicate, delete, rename, prune non-visible layers, move
   the selected faces or vertices to a new layer, split into connected components, plus the
   raster layers and their cameras in Bundler `.out` and Agisoft `.xml`
-- **filter_sampling** (7) — Montecarlo, stratified, clustered, Poisson-disk and element
-  sampling, point-cloud simplification, Hausdorff distance
+- **filter_sampling** (14, complete) — Montecarlo, stratified, clustered, Poisson-disk, element,
+  texel and regular-recursive sampling, point-cloud simplification, Hausdorff and reference-mesh
+  distance, vertex attribute transfer, uniform volumetric resampling, and Voronoi and disk vertex
+  colouring
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
 - **filter_texture** (8 of 9) — per-vertex/per-wedge UV conversion with seam splitting, flat-plane
   and trivial per-triangle parametrisation, texture assignment, and baking vertex colour, normals,
@@ -86,7 +90,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 59 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 46 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -200,6 +204,20 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **The generated filter table swallowed the code after each switch.** The extractor gave the
+  last `case` of a dispatch everything up to the end of the function, which in several plugins
+  meant an `Error on Foo::filterName()` fallback string — so `Generate Scalar Harmonic Field` was
+  registered under a name a script would never type, and thirty-odd descriptions ended in
+  `Unknown Filter`. Cutting each arm at the first statement boundary fixed all of them at once.
+  Two of the names had already been implemented in their mangled form; a generated table is only
+  as trustworthy as its extractor, which is the argument for reviewing its diff.
+- **The crease cut allocates one vertex per wedge, not one per crease crossing.** Upstream
+  allocates on the crossing itself, so a closed fan claims one more vertex than it writes and the
+  spare is never referenced — eight orphans on a cube. Deferring the allocation to the moment a
+  wedge is actually written costs nothing and leaves none.
+- **Quality saturation and the harmonic field both need every component.** See the note on
+  saturation below; the harmonic solve simply refuses a mesh in more than one piece, since a
+  second component has no path to either boundary condition and its values would be arbitrary.
 - **Booleans are volumetric, and never fail.** Upstream uses exact predicates on the triangles;
   this builds a signed distance field per operand and combines them — `min` for union, `max` for
   intersection, `max(A, -B)` for difference. Two self-intersecting or non-manifold inputs give a
