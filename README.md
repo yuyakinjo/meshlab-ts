@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 242 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 246 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -39,6 +39,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
   texel and regular-recursive sampling, point-cloud simplification, Hausdorff and reference-mesh
   distance, vertex attribute transfer, uniform volumetric resampling, and Voronoi and disk vertex
   colouring
+- **filter_qhull** (4, complete) — convex hull, alpha complex and alpha shape, Voronoi filtering,
+  and hidden-point removal, over a quickhull and a Bowyer-Watson Delaunay tetrahedralization
+  written here rather than linked from Qhull
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
 - **filter_texture** (8 of 9) — per-vertex/per-wedge UV conversion with seam splitting, flat-plane
   and trivial per-triangle parametrisation, texture assignment, and baking vertex colour, normals,
@@ -92,7 +95,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 40 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 36 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -206,6 +209,19 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **Qhull is replaced, not bound.** MeshLab links Qhull for a convex hull and a Delaunay
+  triangulation; both are written here instead — quickhull and Bowyer-Watson, in
+  `vcg/space/`. Neither uses exact predicates: degeneracy is handled with a scale-relative
+  epsilon, which is enough for the point clouds these filters see and keeps the code readable.
+  The cost is that a nearly-cospherical patch may come back triangulated differently than Qhull
+  would do it. The *set* of hull vertices is the same either way, and that is what all four
+  callers actually use.
+- **An alpha shape cannot quite reach the convex hull through the slider.** It sweeps toward the
+  hull as alpha grows, but the parameter is capped at the bounding-box diagonal while the sliver
+  tetrahedra lying against the hull have circumradii an order of magnitude larger. That range is
+  upstream's, so the behaviour matches; the exact statement — that the boundary of the *whole*
+  tetrahedralization is the convex hull, face for face — is tested against the tetrahedralization
+  itself instead.
 - **Ball pivoting interpolates; Screened Poisson approximates.** Both reconstruct a surface from
   a point cloud, and which one is right depends on how much the points are trusted. Ball pivoting
   uses the input points and only those, so a clean scan comes back exactly as measured and a

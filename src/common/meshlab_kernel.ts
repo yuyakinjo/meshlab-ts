@@ -36,6 +36,7 @@ import { FilterMeshBoolean } from "../meshlabplugins/filter_mesh_booleans/filter
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
 import { FilterMLS } from "../meshlabplugins/filter_mls/filter_mls.ts";
 import { FilterParametrization } from "../meshlabplugins/filter_parametrization/filter_parametrization.ts";
+import { FilterQhull } from "../meshlabplugins/filter_qhull/filter_qhull.ts";
 import { FilterQuality } from "../meshlabplugins/filter_quality/filter_quality.ts";
 import { FilterSample } from "../meshlabplugins/filter_sample/filter_sample.ts";
 import { FilterSampling } from "../meshlabplugins/filter_sampling/filter_sampling.ts";
@@ -81,6 +82,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterColorProjection(),
 	() => new FilterMeshAlphaWrap(),
 	() => new FilterCubization(),
+	() => new FilterQhull(),
 	() => new FilterEmbree(),
 	() => new FilterMeshBoolean(),
 	() => new FilterTriOptimize(),
