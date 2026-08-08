@@ -30,7 +30,7 @@ import type { CallBackPos } from "../../common/utilities/callback.ts";
 import { MLException, MLNotImplementedException } from "../../common/utilities/ml_exception.ts";
 import { Allocator } from "../../vcg/complex/allocator.ts";
 import { AttributeSeam, type SeamMask } from "../../vcg/complex/attribute_seam.ts";
-import { countBitQuads } from "../../vcg/complex/bit_quad.ts";
+import { countBitQuads, hasConsistentPerFaceFauxFlag } from "../../vcg/complex/bit_quad.ts";
 import { BitQuadCreation } from "../../vcg/complex/bitquad_creation.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
 import { CMeshO } from "../../vcg/complex/cmesho.ts";
@@ -45,8 +45,10 @@ import {
 	quadricSimplification,
 } from "../../vcg/complex/local_optimization/tri_edge_collapse_quadric.ts";
 import { estimateNormals } from "../../vcg/complex/pointcloud_normal.ts";
+import { PolygonSupport } from "../../vcg/complex/polygon_support.ts";
 import { Polyline } from "../../vcg/complex/polyline.ts";
 import { Refine } from "../../vcg/complex/refine.ts";
+import { catmullClark, dooSabin } from "../../vcg/complex/subdivision_poly.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdatePosition } from "../../vcg/complex/update/position.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
@@ -88,6 +90,8 @@ export const FP = {
 	FP_QUAD_DOMINANT: 30,
 	FP_REFINE_LS3_LOOP: 31,
 	FP_VATTR_SEAM: 32,
+	FP_REFINE_CATMULL: 33,
+	FP_REFINE_DOOSABIN: 34,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -375,6 +379,26 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 			"<b>Least squares subdivision surfaces</b><br>Computer Graphics Forum, 2010.",
 		filterClass: FilterClass.Remeshing,
 		requirements: MeshElement.MM_FACEFACETOPO | MeshElement.MM_VERTNORMAL,
+	},
+	[FP.FP_REFINE_CATMULL]: {
+		name: "Subdivision Surfaces: Catmull-Clark",
+		pythonName: "meshing_surface_subdivision_catmull_clark",
+		info:
+			"Apply the Catmull-Clark Subdivision Surfaces. Each quad is split into four, and each " +
+			"triangle into three, so the result is always a pure quad mesh whatever the input was. " +
+			"Note that this filter is designed to work on polygonal meshes; on a plain triangle mesh " +
+			"it is equivalent to applying it to a mesh whose every face is a triangle.",
+		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_REFINE_DOOSABIN]: {
+		name: "Subdivision Surfaces: Doo Sabin",
+		pythonName: "meshing_surface_subdivision_doo_sabin",
+		info:
+			"Apply the DooSabin subdivision surface algorithm. It is an iterative process that " +
+			"generates a new mesh with a face for each original face, edge and vertex.",
+		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
+		requirements: MeshElement.MM_FACEFACETOPO,
 	},
 	[FP.FP_VATTR_SEAM]: {
 		name: "Vertex Attribute Seam",
@@ -1204,6 +1228,15 @@ export class FilterMeshing extends FilterPlugin {
 				);
 				break;
 
+			case FP.FP_REFINE_CATMULL:
+				list.add(
+					new RichInt("Iterations", 1, {
+						description: "Iterations",
+						tooltip: "Number of times the model is subdivided",
+					}),
+				);
+				break;
+
 			case FP.FP_REFINE_LS3_LOOP:
 				list.add(
 					new RichInt("LoopWeight", 0, {
@@ -1833,6 +1866,29 @@ export class FilterMeshing extends FilterPlugin {
 				Allocator.compactEveryVector(cm);
 				m.updateBoxAndNormals();
 				doc.Log.log(`LS3 Loop refined ${before} faces into ${cm.fn}`);
+				return { vertex_number: cm.vn, face_number: cm.fn };
+			}
+
+			case FP.FP_REFINE_CATMULL:
+			case FP.FP_REFINE_DOOSABIN: {
+				UpdateTopology.faceFace(cm);
+				if (!hasConsistentPerFaceFauxFlag(cm)) {
+					throw new MLException("Mesh has inconsistent Faux Edge tagging.");
+				}
+				const iterations =
+					id === FP.FP_REFINE_CATMULL ? Math.max(1, params.getInt("Iterations")) : 1;
+				let result = cm;
+				for (let i = 0; i < iterations; i++) {
+					result = id === FP.FP_REFINE_CATMULL ? catmullClark(result) : dooSabin(result);
+					UpdateTopology.faceFace(result);
+				}
+				// The scheme builds a whole new mesh, so its geometry is moved into
+				// the layer rather than the layer being swapped out — a caller
+				// holding `doc.mm().cm` must still have the mesh it gets back.
+				PolygonSupport.replaceGeometry(cm, result);
+				m.updateDataMask(MeshElement.MM_POLYGONAL);
+				m.updateBoxAndNormals();
+				doc.Log.log(`Subdivided into ${cm.vn} vertices and ${cm.fn} faces`);
 				return { vertex_number: cm.vn, face_number: cm.fn };
 			}
 

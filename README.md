@@ -10,21 +10,21 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 262 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 264 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
 - **filter_clean** (15, complete) — welding, degenerate and duplicate removal, isolated pieces,
   non-manifold edge and vertex repair, T-vertices, removal by quality, wedge-UV merging,
   mismatched-border snapping, and ball-pivoting surface reconstruction
-- **filter_meshing** (33 of 37) — re-orientation, hole closing, QEM decimation, the transform
+- **filter_meshing** (35 of 37) — re-orientation, hole closing, QEM decimation, the transform
   family (scale, centre, rotate, freeze, reset, explicit matrix, translation/rotation/scale,
   inversion, axis flip and swap, principal-axis alignment, rotate-to-fit-a-plane), point-cloud
   normal estimation and smoothing, Loop/Butterfly/midpoint subdivision, isotropic explicit
   remeshing, clustering decimation, principal curvature directions, crease-edge selection,
   polygon-to-triangle conversion, planar sections, selection perimeters, crease polylines and
   cylindrical unwrapping, quad-dominant pairing, 4-8 quad refinement, LS3 Loop subdivision and
-  vertex attribute seams
+  vertex attribute seams, and Catmull-Clark and Doo-Sabin subdivision
 - **filter_select** (24, complete) — selection and deletion, dilation and erosion, selection by
   vertex/face quality, by colour in RGB or HSV, by view angle, by edge length, by connectivity,
   by triangle shape and fold, by local outlier probability, by self-intersection, and by
@@ -100,7 +100,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 20 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 18 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -214,6 +214,12 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **A polygon is the faux-edge representation, not a second mesh type.** Upstream keeps a
+  separate `PolyMesh` and converts to and from it for Catmull-Clark and Doo-Sabin. Here a polygon
+  is already what the library has — triangles joined by hidden edges — so the bridge is two
+  functions: one walks a group's unhidden boundary into an ordered ring, the other fans a ring
+  back into triangles with the interior diagonals hidden. Both schemes then read polygons, compute
+  polygons, and write polygons; neither touches a triangle.
 - **LS3 Loop uses the normals; plain Loop cannot.** Both split the same edges with the same
   weights. The difference is what the weights are applied to: Loop averages the neighbouring
   *positions*, LS3 fits an algebraic sphere to the neighbouring positions *and normals* and takes
