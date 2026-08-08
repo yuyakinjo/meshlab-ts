@@ -53,10 +53,16 @@ jobs:
 
       # Trusted publishing needs npm >= 11.5.1; Node's bundled npm may lag, so
       # the CLI is updated explicitly rather than hoped about.
+      #
+      # Deliberately NO registry-url here. setup-node's registry-url writes an
+      # .npmrc with an authToken placeholder and exports NODE_AUTH_TOKEN as a
+      # literal "XXXXX-..." — and npm prefers a configured token over OIDC, so
+      # the placeholder is sent and the registry answers 404. Trusted
+      # publishing wants no token configured anywhere; npm then falls through
+      # to the OIDC exchange on its own.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
       - run: npm install -g npm@latest
       - run: npm --version
 
