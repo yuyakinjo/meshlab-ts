@@ -1,0 +1,65 @@
+# Publishes to npm via OIDC trusted publishing: no token lives anywhere.
+#
+# npm exchanges the workflow's short-lived OIDC token for publish rights, so
+# there is no NPM_TOKEN secret to leak, rotate, or exfiltrate, and provenance
+# is attested automatically. The trust is configured on npmjs.com (package
+# Settings → Trusted Publisher → GitHub Actions: this repo, this filename),
+# which is also why the one-time first publish has to be manual — the setting
+# only exists once the package does. See docs/releasing.md.
+#
+# Triggered by publishing a GitHub release whose tag is v<version>.
+
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  # The whole mechanism: this lets npm verify the workflow's identity.
+  id-token: write
+
+env:
+  MESHLAB_TS_ALLOW_GOLDEN_REGEN: ""
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same gate as CI, run again here: a release tag is not a reason to
+      # skip the checks, it is the reason to run them.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun test
+      - run: bun run registry:check
+
+      # The tag names the version; package.json must agree, or the registry
+      # ends up describing a commit other than the one tagged.
+      - name: Check the tag matches package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(bun -e 'console.log(require("./package.json").version)')"
+          if [ "$tag" != "$version" ]; then
+            echo "tag v$tag does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      # Trusted publishing needs npm >= 11.5.1; Node's bundled npm may lag, so
+      # the CLI is updated explicitly rather than hoped about.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
+      - run: npm --version
+
+      # No token: with a trusted publisher configured, npm authenticates this
+      # workflow through its OIDC identity and attests provenance on its own.
+      - run: npm publish
