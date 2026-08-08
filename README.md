@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 202 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 211 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -37,6 +37,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_texture** (8 of 9) — per-vertex/per-wedge UV conversion with seam splitting, flat-plane
   and trivial per-triangle parametrisation, texture assignment, and baking vertex colour, normals,
   quality or another mesh's texture into a texture map
+- **filter_embree** (5) — the ray-traced measures under the names a script written against Embree
+  uses, plus geometric face re-orientation and visible-face selection
+- **filter_mesh_booleans** (4) — union, intersection, difference and XOR, volumetrically
 - **filter_color_projection** (3) — project the registered photographs onto the vertices or into
   a texture, with a depth test and angle/distance/border weighting
 - **filter_mesh_alpha_wrap** (1) — a watertight shell around any input, however broken
@@ -80,7 +83,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 80 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 71 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -194,6 +197,15 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **Booleans are volumetric, and never fail.** Upstream uses exact predicates on the triangles;
+  this builds a signed distance field per operand and combines them — `min` for union, `max` for
+  intersection, `max(A, -B)` for difference. Two self-intersecting or non-manifold inputs give a
+  watertight result all the same, where an exact method would refuse. What it gives up is the
+  sharp seam: a crease finer than a grid cell is rounded off, and the resolution is the dial.
+- **Marching tetrahedra orients against the field, not by volume.** Orienting a component by its
+  signed volume is wrong the moment there is more than one: a hollow shell's inner surface
+  encloses a cavity, and turning it "outwards" makes the two surfaces stop describing one solid.
+  Reading the field's gradient is unambiguous however many pieces come out.
 - **Alpha wrap is a morphological closing, not a Delaunay refinement.** CGAL builds it by
   refining a triangulation; here the input is dilated by `alpha + offset` and eroded by `alpha`
   on a distance-field grid, which is what "rolling a ball" means. The distance is *unsigned*, so

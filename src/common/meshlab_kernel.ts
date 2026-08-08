@@ -23,6 +23,7 @@ import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
 import { FilterCreateIso } from "../meshlabplugins/filter_createiso/filter_createiso.ts";
 import { FilterCubization } from "../meshlabplugins/filter_cubization/filter_cubization.ts";
 import { FilterDirt } from "../meshlabplugins/filter_dirt/filter_dirt.ts";
+import { FilterEmbree } from "../meshlabplugins/filter_embree/filter_embree.ts";
 import { FilterFractal } from "../meshlabplugins/filter_fractal/filter_fractal.ts";
 import { FilterFunc } from "../meshlabplugins/filter_func/filter_func.ts";
 import { FilterGeodesic } from "../meshlabplugins/filter_geodesic/filter_geodesic.ts";
@@ -31,6 +32,7 @@ import { FilterIsoParametrization } from "../meshlabplugins/filter_isoparametriz
 import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
 import { FilterMeshAlphaWrap } from "../meshlabplugins/filter_mesh_alpha_wrap/filter_mesh_alpha_wrap.ts";
+import { FilterMeshBoolean } from "../meshlabplugins/filter_mesh_booleans/filter_mesh_booleans.ts";
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
 import { FilterMLS } from "../meshlabplugins/filter_mls/filter_mls.ts";
 import { FilterParametrization } from "../meshlabplugins/filter_parametrization/filter_parametrization.ts";
@@ -79,6 +81,8 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterColorProjection(),
 	() => new FilterMeshAlphaWrap(),
 	() => new FilterCubization(),
+	() => new FilterEmbree(),
+	() => new FilterMeshBoolean(),
 	() => new FilterTriOptimize(),
 	() => new FilterParametrization(),
 	() => new FilterQuality(),

@@ -183,14 +183,16 @@ describe("unimplemented filters", () => {
 	test("throw MLNotImplementedException rather than doing nothing", () => {
 		const doc = new MeshDocument();
 		doc.addNewMesh("m", "m");
-		// Named filters, so a regression points at something specific rather
-		// than at whatever happens to be first. These are far enough down the
-		// tiers that they will not land soon; the assertion below fails loudly
-		// with instructions if one does.
-		for (const name of ["Mesh Boolean: Union", "Parametrization: Voronoi Atlas"]) {
-			const action = kernel.filterAction(name);
-			expect(action.implemented, `${name} is now implemented — pick another here`).toBe(false);
-			expect(() => kernel.applyFilter(doc, name), name).toThrow(MLNotImplementedException);
+		// Every pending filter, not a hand-picked pair. Naming two was the
+		// obvious way to make a failure point somewhere specific, and it went
+		// stale the moment one of them was implemented — the sweep cannot,
+		// and it covers more.
+		const pending = kernel.filterList().filter((f) => !f.implemented);
+		expect(pending.length, "some filters should still be pending").toBeGreaterThan(0);
+		for (const action of pending) {
+			expect(() => kernel.applyFilter(doc, action.name), action.name).toThrow(
+				MLNotImplementedException,
+			);
 		}
 	});
 

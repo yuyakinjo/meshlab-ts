@@ -134,8 +134,108 @@ export function marchingTetrahedra(
 	// inside, so the sheet is only consistent after a propagation pass.
 	UpdateTopology.faceFace(out);
 	Clean.orientCoherentlyMesh(out);
-	Clean.flipNormalOutside(out);
+	orientAgainstField(out, values, counts, coord, index);
 	UpdateTopology.faceFace(out);
 	UpdateNormal.perVertexNormalizedPerFaceNormalized(out);
 	return out;
+}
+
+/**
+ * Turns each connected component so its normals point towards *increasing*
+ * field value — outwards, since the field is negative inside.
+ *
+ * The obvious alternative, orienting by signed volume, is wrong the moment
+ * there is more than one component: a hollow shell's inner surface encloses a
+ * cavity, so pointing it "outwards" in the volume sense turns it inside out
+ * and the two surfaces stop describing one solid. Reading the field is
+ * unambiguous however many pieces there are.
+ */
+function orientAgainstField(
+	out: CMeshO,
+	values: Float64Array,
+	counts: readonly number[],
+	coord: (axis: number, i: number) => number,
+	index: (i: number, j: number, k: number) => number,
+): void {
+	const components = componentsOf(out);
+	const step = [0, 1, 2].map((a) => (counts[a] > 1 ? coord(a, 1) - coord(a, 0) : 1));
+	const origin = [0, 1, 2].map((a) => coord(a, 0));
+
+	for (const faces of components) {
+		// Vote across the component rather than trusting one face: a single
+		// triangle can sit where the gradient is numerically zero.
+		let agree = 0;
+		let disagree = 0;
+		for (const f of faces) {
+			const p = [0, 0, 0];
+			for (let k = 0; k < 3; k++) {
+				const v = out.fv(f, k);
+				p[0] += out.vx(v) / 3;
+				p[1] += out.vy(v) / 3;
+				p[2] += out.vz(v) / 3;
+			}
+			const gradient = sampleGradient(values, counts, origin, step, index, p);
+			const n = faceNormal(out, f);
+			const dot = n[0] * gradient[0] + n[1] * gradient[1] + n[2] * gradient[2];
+			if (dot > 0) agree++;
+			else if (dot < 0) disagree++;
+		}
+		if (disagree <= agree) continue;
+		for (const f of faces) out.setFace(f, out.fv(f, 0), out.fv(f, 2), out.fv(f, 1));
+	}
+}
+
+function componentsOf(out: CMeshO): number[][] {
+	const seen = new Uint8Array(out.faceSize);
+	const components: number[][] = [];
+	for (let start = 0; start < out.faceSize; start++) {
+		if (out.isFaceD(start) || seen[start] === 1) continue;
+		const component: number[] = [];
+		const stack = [start];
+		seen[start] = 1;
+		while (stack.length > 0) {
+			const f = stack.pop() as number;
+			component.push(f);
+			for (let e = 0; e < 3; e++) {
+				if (out.isBorderFF(f, e)) continue;
+				const g = out.ffp(f, e);
+				if (g < 0 || out.isFaceD(g) || seen[g] === 1) continue;
+				seen[g] = 1;
+				stack.push(g);
+			}
+		}
+		components.push(component);
+	}
+	return components;
+}
+
+/** The field's gradient at a point, by central differences on the grid. */
+function sampleGradient(
+	values: Float64Array,
+	counts: readonly number[],
+	origin: readonly number[],
+	step: readonly number[],
+	index: (i: number, j: number, k: number) => number,
+	p: readonly number[],
+): number[] {
+	const cell = [0, 1, 2].map((a) =>
+		Math.max(1, Math.min(counts[a] - 2, Math.round((p[a] - origin[a]) / step[a]))),
+	);
+	const at = (di: number, dj: number, dk: number) =>
+		values[index(cell[0] + di, cell[1] + dj, cell[2] + dk)];
+	return [
+		(at(1, 0, 0) - at(-1, 0, 0)) / (2 * step[0]),
+		(at(0, 1, 0) - at(0, -1, 0)) / (2 * step[1]),
+		(at(0, 0, 1) - at(0, 0, -1)) / (2 * step[2]),
+	];
+}
+
+function faceNormal(out: CMeshO, f: number): number[] {
+	const p = [0, 1, 2].map((k) => {
+		const v = out.fv(f, k);
+		return [out.vx(v), out.vy(v), out.vz(v)];
+	});
+	const u = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+	const w = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+	return [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
 }
