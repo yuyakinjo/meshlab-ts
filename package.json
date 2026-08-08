@@ -52,6 +52,7 @@
 	"files": [
 		"src",
 		"bin",
+		".agents",
 		"LICENSE",
 		"README.md"
 	]
