@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 157 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 161 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -37,6 +37,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_texture** (8 of 9) — per-vertex/per-wedge UV conversion with seam splitting, flat-plane
   and trivial per-triangle parametrisation, texture assignment, and baking vertex colour, normals,
   quality or another mesh's texture into a texture map
+- **filter_isoparametrization** (4) — Pietroni, Tarini and Cignoni's abstract-domain
+  parametrisation: build the coarse domain, remesh uniformly through it, build an atlased mesh,
+  and transfer it between aligned meshes
 - **filter_mls** (8) — APSS and RIMLS moving least squares surfaces: projection, marching-cubes
   iso-surface extraction, curvature colouring, radius-from-density, small-component selection
 - **filter_func** (12) — expression-driven filters: conditional vertex and face selection,
@@ -53,7 +56,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 125 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 121 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -167,6 +170,13 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **The isoparametrisation's inverse map is a projection.** Upstream keeps the fine triangulation
+  restricted to each domain face and inverts the barycentric map through it exactly — most of
+  `iso_parametrization.h`'s two thousand lines. Here a domain sample is evaluated on the coarse
+  domain and projected onto the nearest point of the surface. The result lands on the surface and
+  is uniform in domain space, which is what the remeshing needs, but it is not bit-comparable
+  with MeshLab. Likewise the atlas assigns a straddling face to the slot holding most of it and
+  clamps the strays, where upstream cuts the face; the count of straddling faces is reported.
 - **The abstract domain never loses a vertex.** `parametrization/abstract_domain.ts` simplifies a
   mesh while every original vertex stays pinned inside some face of the coarse domain by a
   barycentric coordinate. A collapse flattens the affected star, records where each pin sits,

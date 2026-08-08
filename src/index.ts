@@ -71,6 +71,11 @@ export { computePythonName } from "./common/utilities/python_name.ts";
 // The upstream filter catalogue
 export { FILTER_TABLE, type FilterTableRow } from "./meshlabplugins/_stub/filter_table.ts";
 export {
+	type BuildOptions,
+	type DomainPoint,
+	IsoParametrization,
+} from "./meshlabplugins/filter_isoparametrization/iso_parametrization.ts";
+export {
 	type AgisoftCamera,
 	type AgisoftImport,
 	applyShot,
@@ -245,3 +250,4 @@ export { Color4 } from "./vcg/space/color4.ts";
 export { Image } from "./vcg/space/image/image.ts";
 export { isPng, readPng, writePng } from "./vcg/space/image/png.ts";
 export { KdTree, pointBounds } from "./vcg/space/index/kdtree.ts";
+export { closestOnTriangle, type Hit, SurfaceLookup } from "./vcg/space/index/surface_lookup.ts";

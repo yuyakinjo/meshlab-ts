@@ -18,6 +18,7 @@ import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
 import { FilterColorProc } from "../meshlabplugins/filter_colorproc/filter_colorproc.ts";
 import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
 import { FilterFunc } from "../meshlabplugins/filter_func/filter_func.ts";
+import { FilterIsoParametrization } from "../meshlabplugins/filter_isoparametrization/filter_isoparametrization.ts";
 import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
@@ -49,6 +50,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterLayer(),
 	() => new FilterMLS(),
 	() => new FilterTexture(),
+	() => new FilterIsoParametrization(),
 	() => new FilterColorProc(),
 	() => new FilterCreate(),
 	() => new FilterFunc(),

@@ -92,6 +92,24 @@ export class AbstractDomain {
 		return new AbstractDomain(base, hires, pinned);
 	}
 
+	/**
+	 * Wraps an existing base mesh around a *different* fine mesh.
+	 *
+	 * Used when transferring a parametrisation: the coarse domain is already
+	 * built and only the pin lists change. The base is copied, so the two
+	 * domains cannot drift into sharing geometry.
+	 */
+	static adopt(base: CMeshO, hires: CMeshO, pinned: Array<PinnedVertex[]>): AbstractDomain {
+		// Index-preserving, unlike {@link from}'s compacting copy: the pin
+		// table is keyed by face index, so compacting here would silently
+		// re-address every pin.
+		const copy = copyMeshKeepingIndices(base);
+		if (pinned.length < copy.faceSize) {
+			throw new Error(`the pin table has ${pinned.length} entries for ${copy.faceSize} faces`);
+		}
+		return new AbstractDomain(copy, hires, pinned);
+	}
+
 	/** How many original vertices the domain still accounts for. */
 	pinnedCount(): number {
 		let n = 0;
@@ -571,6 +589,26 @@ function doCollapse(
 	}
 	vertFaces[v0].clear();
 	Allocator.deleteVertex(cm, v0);
+}
+
+/**
+ * A copy that keeps every slot, deleted ones included, so face and vertex
+ * indices mean the same thing in both meshes.
+ */
+function copyMeshKeepingIndices(src: CMeshO): CMeshO {
+	const out = new CMeshO();
+	if (src.vertSize > 0) {
+		Allocator.addVertices(out, src.vertSize);
+		for (let v = 0; v < src.vertSize; v++) {
+			out.setVert(v, src.vx(v), src.vy(v), src.vz(v));
+			if (src.isVertD(v)) Allocator.deleteVertex(out, v);
+		}
+	}
+	for (let f = 0; f < src.faceSize; f++) {
+		const at = Allocator.addFace(out, src.fv(f, 0), src.fv(f, 1), src.fv(f, 2));
+		if (src.isFaceD(f)) Allocator.deleteFace(out, at);
+	}
+	return out;
 }
 
 /** A structural copy: geometry and faces, nothing optional. */
