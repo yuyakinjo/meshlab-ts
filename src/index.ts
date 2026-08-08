@@ -172,6 +172,12 @@ export {
 	triQuality,
 } from "./vcg/complex/edge_ops.ts";
 export { borderBit, FaceFlag, fauxBit, VertexFlag } from "./vcg/complex/flags.ts";
+export {
+	borderVertices,
+	dijkstraGeodesic,
+	type HeatOptions,
+	heatGeodesic,
+} from "./vcg/complex/geodesic.ts";
 // Algorithms, for callers that want them directly rather than through a filter
 export { type EarStrategy, type FillHoleOptions, Hole } from "./vcg/complex/hole.ts";
 export { Inertia, type MassProperties } from "./vcg/complex/inertia.ts";
@@ -244,6 +250,7 @@ export { GenNormal, type SpherePoint } from "./vcg/math/gen_normal.ts";
 export { Distribution, Histogram } from "./vcg/math/histogram.ts";
 export { type Matrix44, Matrix44Ops } from "./vcg/math/matrix44.ts";
 export { Camera, Extrinsics, Shot } from "./vcg/math/shot.ts";
+export { type SolveResult, SparseMatrix, solveCG } from "./vcg/math/sparse.ts";
 export { Point3 } from "./vcg/math/vec3.ts";
 export { Box3 } from "./vcg/space/box3.ts";
 export { Color4 } from "./vcg/space/color4.ts";

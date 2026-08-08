@@ -217,7 +217,9 @@ export class IsoParametrization {
 			if (!this.domain.base.isFaceD(f)) domainFaces.push(f);
 		}
 		const slotOf = new Map<number, number>();
-		domainFaces.forEach((f, i) => slotOf.set(f, i));
+		domainFaces.forEach((f, i) => {
+			slotOf.set(f, i);
+		});
 
 		const side = Math.max(1, Math.ceil(Math.sqrt(domainFaces.length)));
 		const step = 1 / side;

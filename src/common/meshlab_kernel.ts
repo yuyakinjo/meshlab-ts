@@ -18,15 +18,20 @@ import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
 import { FilterColorProc } from "../meshlabplugins/filter_colorproc/filter_colorproc.ts";
 import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
 import { FilterFunc } from "../meshlabplugins/filter_func/filter_func.ts";
+import { FilterGeodesic } from "../meshlabplugins/filter_geodesic/filter_geodesic.ts";
 import { FilterIsoParametrization } from "../meshlabplugins/filter_isoparametrization/filter_isoparametrization.ts";
 import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
 import { FilterMLS } from "../meshlabplugins/filter_mls/filter_mls.ts";
+import { FilterParametrization } from "../meshlabplugins/filter_parametrization/filter_parametrization.ts";
+import { FilterQuality } from "../meshlabplugins/filter_quality/filter_quality.ts";
+import { FilterSample } from "../meshlabplugins/filter_sample/filter_sample.ts";
 import { FilterSampling } from "../meshlabplugins/filter_sampling/filter_sampling.ts";
 import { FilterScreenedPoisson } from "../meshlabplugins/filter_screened_poisson/filter_screened_poisson.ts";
 import { FilterSelect } from "../meshlabplugins/filter_select/filter_select.ts";
 import { FilterTexture } from "../meshlabplugins/filter_texture/filter_texture.ts";
+import { FilterTriOptimize } from "../meshlabplugins/filter_trioptimize/filter_trioptimize.ts";
 import { FilterUnsharp } from "../meshlabplugins/filter_unsharp/filter_unsharp.ts";
 import { BaseMeshIOPlugin } from "../meshlabplugins/io_base/io_base.ts";
 import type { MeshDocument } from "./ml_document/mesh_document.ts";
@@ -51,6 +56,11 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterMLS(),
 	() => new FilterTexture(),
 	() => new FilterIsoParametrization(),
+	() => new FilterGeodesic(),
+	() => new FilterTriOptimize(),
+	() => new FilterParametrization(),
+	() => new FilterQuality(),
+	() => new FilterSample(),
 	() => new FilterColorProc(),
 	() => new FilterCreate(),
 	() => new FilterFunc(),

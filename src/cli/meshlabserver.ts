@@ -42,7 +42,7 @@ Examples:
 
 /** Reads `--save normals,quality` into the MM_* bits {@link MeshLabKernel.saveMesh} takes. */
 function parseSaveMask(args: string[]): number | undefined {
-	const idx = args.findIndex((a) => a === "--save");
+	const idx = args.indexOf("--save");
 	if (idx < 0) return undefined;
 	const spec = args[idx + 1];
 	if (spec === undefined) fail("--save needs a comma-separated channel list");
