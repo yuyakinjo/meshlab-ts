@@ -6,6 +6,7 @@ import { CMeshO } from "../../vcg/complex/cmesho.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdateNormal } from "../../vcg/complex/update/normal.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
+import { Shot } from "../../vcg/math/shot.ts";
 import { MeshElement, maskAnd, maskIntersects, maskWithout } from "./mesh_element.ts";
 
 export class MeshModel {
@@ -20,6 +21,14 @@ export class MeshModel {
 	/** Index within a multi-mesh file; -1 when it did not come from one. */
 	idInFile = -1;
 	readonly textures = new Map<string, Uint8Array>();
+	/**
+	 * The camera this layer was seen from, MeshLab's `cm.shot`.
+	 *
+	 * A mesh has one whether or not anything set it: the identity shot means
+	 * "no particular viewpoint", which is what every filter that reads it
+	 * treats an unset camera as anyway.
+	 */
+	readonly shot = new Shot();
 
 	constructor(id: number, fullFileName = "", label = "", mesh?: CMeshO) {
 		this._id = id;

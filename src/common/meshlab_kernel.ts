@@ -15,10 +15,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createStubPlugins } from "../meshlabplugins/_stub/stub_plugins.ts";
 import { FilterAmbientOcclusion } from "../meshlabplugins/filter_ao/filter_ao.ts";
+import { FilterCamera } from "../meshlabplugins/filter_camera/filter_camera.ts";
 import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
 import { FilterColorProc } from "../meshlabplugins/filter_colorproc/filter_colorproc.ts";
 import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
 import { FilterCreateIso } from "../meshlabplugins/filter_createiso/filter_createiso.ts";
+import { FilterDirt } from "../meshlabplugins/filter_dirt/filter_dirt.ts";
 import { FilterFractal } from "../meshlabplugins/filter_fractal/filter_fractal.ts";
 import { FilterFunc } from "../meshlabplugins/filter_func/filter_func.ts";
 import { FilterGeodesic } from "../meshlabplugins/filter_geodesic/filter_geodesic.ts";
@@ -69,6 +71,8 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterAmbientOcclusion(),
 	() => new FilterSDF(),
 	() => new FilterICP(),
+	() => new FilterCamera(),
+	() => new FilterDirt(),
 	() => new FilterTriOptimize(),
 	() => new FilterParametrization(),
 	() => new FilterQuality(),

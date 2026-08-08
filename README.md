@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 187 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 197 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -37,6 +37,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_texture** (8 of 9) — per-vertex/per-wedge UV conversion with seam splitting, flat-plane
   and trivial per-triangle parametrisation, texture assignment, and baking vertex colour, normals,
   quality or another mesh's texture into a texture map
+- **filter_camera** (8) — set a mesh's or a raster's camera, move any or all of them, measure
+  vertex quality from a camera, and re-orient normals to face one
+- **filter_dirt** (2) — dust accumulation and point-cloud movement over a surface
 - **filter_sdfgpu** (3) — shape diameter function, depth complexity and volumetric obscurance,
   by ray casting rather than by depth peeling
 - **filter_icp** (3) — point-to-plane ICP between two meshes or across every visible layer, and
@@ -73,7 +76,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 95 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 85 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -187,6 +190,11 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **A camera's pose is a view point, not a translation.** `Shot.Extrinsics.tra` is where the
+  camera *is*, following VCGLib, not the `-R·c` a world-to-camera matrix would store. Moving a
+  camera is therefore a transform of that point plus a rotation of its axes — and the rotation
+  composes on the *right*, since `rot` maps world to camera. Multiplying on the left instead
+  leaves cameras somewhere plausible and pointing the wrong way.
 - **Ray casting replaces the GPU.** `filter_ao` and `filter_sdfgpu` are named for the depth
   buffers MeshLab renders; there is no GPU here, so they trace rays against a BVH instead. The
   quantities are the same and if anything more accurate — a depth buffer quantises directions to
