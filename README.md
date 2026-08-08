@@ -8,6 +8,67 @@ The goal is **API compatibility with MeshLab's C++ architecture** — the same `
 so that any recipe expressed against MeshLab or PyMeshLab can be expressed here without a Python
 runtime.
 
+## Positioning, and what compatibility means here
+
+This is an **independent, unofficial** reimplementation. It is not affiliated with or endorsed by
+CNR-ISTI VCLab; the MeshLab and VCGLib sources are read as a specification (never linked, never
+copied), and the result is licensed GPL-3.0 accordingly. The compatibility target is MeshLab's
+C++ architecture and behaviour — not PyMeshLab's Python API, though PyMeshLab's filter and
+parameter names are honoured everywhere.
+
+Compatibility is a claim this project *measures* rather than asserts, at three levels:
+
+1. **The API surface is machine-checked.** All 282 filter names, PyMeshLab names and filter
+   classes are extracted from the C++ sources and compared on every test run
+   (`bun run registry:check`); parameter names, defaults and units are asserted per filter.
+2. **Behaviour is measured differentially.** `test/golden/` compares this library against a real
+   PyMeshLab on identical inputs, with each case pinned to an explicit promise level — down to a
+   digest of the output coordinates where the arithmetic has one possible order. See
+   [the testing section](#differential-tests-against-real-pymeshlab).
+3. **Every deliberate divergence is written down**, in the [design notes](#design-notes) and at
+   the call site. A difference you can only discover by diffing outputs is treated as a bug.
+
+### Bit-perfect compatibility is not the goal
+
+It is not achievable, and pretending otherwise would make the honest promises above meaningless:
+
+- **MeshLab stores coordinates as `float32`; this library computes in `float64`.** Scalars agree
+  to roughly 1e-7 relative and no further. The differential tests compare at float32 granularity
+  because that is the strongest agreement that exists.
+- **Tie-breaking is implementation-defined.** Filters built on priority queues and heuristics —
+  quadric decimation, isotropic remeshing, hole-filling ear order, the atlas defragmentation's
+  greedy driver — produce equivalent meshes, not element-for-element identical ones.
+- **Where fidelity and testability conflict, this library sometimes chooses differently, on
+  purpose.** A wall-clock `timelimit` that makes the same input produce different atlases on
+  different machines is refused rather than honoured; undefined behaviour in upstream
+  (an out-of-bounds `faceAngles[-1]` read) is replaced by the corner it plainly meant. Each such
+  case is documented; none is silent.
+
+### Known gaps
+
+- **13 of 282 filters are registered but intentionally not implemented**, and throw
+  `MLNotImplementedException` rather than pretending: `filter_img_patch_param` (4),
+  `filter_mutualglobal` and `filter_mutualinfo` (image-to-geometry registration built on GL
+  rendering and mutual-information optimisation), `filter_sketchfab` (a network upload),
+  `filter_sample_gpu` (a GL demo), `filter_io_nxs` (2, the Nexus multiresolution format),
+  `filter_plymc` (2, out-of-core volumetric merge), and `filter_ssynth` (a structure-synthesis
+  DSL).
+- **Screened Poisson runs on a uniform grid where upstream's octree adapts locally.** The depth
+  is chosen from the densest region so detailed areas are served, but a cloud with extreme local
+  density variation is reconstructed more conservatively than upstream would.
+- **A handful of parameters are refused rather than approximated**: the textured decimation's
+  `Extratcoordw` (accepted with a warning; the seam-guarding implementation does not use it), the
+  Voronoi atlas's `overlapFlag`, and the texture defragmentation's `timelimit` (a deterministic
+  `maxMoves` is offered instead).
+- **Atlas packing is denser upstream.** MeshLab permutes chart order and tries sixteen rotations;
+  this packer is deterministic, area-ordered, four rotations, and reports its occupancy so the
+  difference is visible rather than discovered from a file size.
+- **IO covers PLY, STL, OBJ and OFF, with PNG textures.** MeshLab's long tail of formats (3DS,
+  DAE, X3D, …) is out of scope, as is everything that needs a screen: rendering, decorations, and
+  the GUI-only plugins.
+- **Random-sampling filters match in distribution, not sample-for-sample** — upstream's RNG is
+  not reproduced.
+
 ## Status
 
 **Tiers 0 to 2 are complete, and Tier 3 is under way.** 269 of MeshLab's 282 filters are
@@ -105,7 +166,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 17 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 13 without an implementation throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
