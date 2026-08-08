@@ -17,9 +17,11 @@ import { createStubPlugins } from "../meshlabplugins/_stub/stub_plugins.ts";
 import { FilterAmbientOcclusion } from "../meshlabplugins/filter_ao/filter_ao.ts";
 import { FilterCamera } from "../meshlabplugins/filter_camera/filter_camera.ts";
 import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
+import { FilterColorProjection } from "../meshlabplugins/filter_color_projection/filter_color_projection.ts";
 import { FilterColorProc } from "../meshlabplugins/filter_colorproc/filter_colorproc.ts";
 import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
 import { FilterCreateIso } from "../meshlabplugins/filter_createiso/filter_createiso.ts";
+import { FilterCubization } from "../meshlabplugins/filter_cubization/filter_cubization.ts";
 import { FilterDirt } from "../meshlabplugins/filter_dirt/filter_dirt.ts";
 import { FilterFractal } from "../meshlabplugins/filter_fractal/filter_fractal.ts";
 import { FilterFunc } from "../meshlabplugins/filter_func/filter_func.ts";
@@ -28,6 +30,7 @@ import { FilterICP } from "../meshlabplugins/filter_icp/filter_icp.ts";
 import { FilterIsoParametrization } from "../meshlabplugins/filter_isoparametrization/filter_isoparametrization.ts";
 import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
+import { FilterMeshAlphaWrap } from "../meshlabplugins/filter_mesh_alpha_wrap/filter_mesh_alpha_wrap.ts";
 import { FilterMeshing } from "../meshlabplugins/filter_meshing/filter_meshing.ts";
 import { FilterMLS } from "../meshlabplugins/filter_mls/filter_mls.ts";
 import { FilterParametrization } from "../meshlabplugins/filter_parametrization/filter_parametrization.ts";
@@ -73,6 +76,9 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterICP(),
 	() => new FilterCamera(),
 	() => new FilterDirt(),
+	() => new FilterColorProjection(),
+	() => new FilterMeshAlphaWrap(),
+	() => new FilterCubization(),
 	() => new FilterTriOptimize(),
 	() => new FilterParametrization(),
 	() => new FilterQuality(),
