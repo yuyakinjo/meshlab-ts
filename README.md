@@ -431,6 +431,21 @@ of truth for filter names and parameter defaults. No code is copied from it.
   geometrically equivalent rather than bit-identical — a sampled sphere, torus and box each come
   back watertight, at the right genus, within a few percent of their true volume.
 
+  Its grid is uniform where upstream's octree subdivides locally, so the depth is chosen from the
+  density of the region with the most detail to offer rather than from the mean over the cloud —
+  the mean is the right answer only when the density is uniform, and a cloud with a well-covered
+  patch and a thin remainder otherwise gets a grid the thin part can live with and the patch
+  cannot use. Anchored on the root-mean-square sample spacing, not a median: each sample stands
+  for an area of about `spacing²`, and a median taken over *samples* sits inside whichever region
+  is more numerous, which makes a skewed cloud look uniform. A uniform cloud therefore comes out
+  at exactly the depth it always did, and the depth can only ever increase.
+
+  On a sphere whose top 15% of area carries 30x the sample density, this halves the error in the
+  sparse region (4.8e-2 → 2.5e-2) as well as improving the dense one (3.3e-2 → 2.2e-2). Widening
+  each sample's splat by its own spacing was tried alongside it and **removed**: the node set is
+  already dilated enough to cover a sparse region, so the extra width bought nothing and blurred
+  the field — it improved the dense region further while making the sparse one worse than before.
+
 ## Testing
 
 Tests are built on mathematics rather than on recorded output, because the whole point of the

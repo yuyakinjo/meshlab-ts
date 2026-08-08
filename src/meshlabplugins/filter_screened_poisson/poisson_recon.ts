@@ -86,6 +86,15 @@ interface Samples {
 	positions: Float64Array;
 	normals: Float64Array;
 	confidence: Float64Array;
+	/**
+	 * Local sample spacing, in unit-cube units, filled by
+	 * {@link estimateLocalSpacing}.
+	 *
+	 * This is what lets the grid be sized by the density of the region that has
+	 * the most detail to offer, rather than by the average over the whole cloud.
+	 * See {@link adaptiveDepth}.
+	 */
+	spacing: Float64Array;
 }
 
 /**
@@ -105,7 +114,14 @@ const BAD_NORMAL_MESSAGE =
 function toUnitCube(
 	sources: readonly CMeshO[],
 	options: PoissonOptions,
-): { samples: Samples; centre: [number, number, number]; span: number; depth: number } {
+): {
+	samples: Samples;
+	centre: [number, number, number];
+	span: number;
+	depth: number;
+	/** The depth the mean density alone would have chosen, for calibration. */
+	uniformDepth: number;
+} {
 	const kept: Array<{ m: CMeshO; v: number }> = [];
 	let sawAny = false;
 	for (const m of sources) {
@@ -158,15 +174,33 @@ function toUnitCube(
 	// The depth the samples can support decides the grid resolution, and the
 	// resolution decides how much padding `scale` actually buys — so both have
 	// to be settled before the positions can be placed in the cube.
-	const depth = effectiveDepth(kept.length, options);
-	const span = extent * paddedScale(options.scale, 2 ** depth);
+	//
+	// The depth is chosen in two steps: the mean-density answer first, then the
+	// dense-region answer measured against it. The spacing is estimated in world
+	// units, before the cube mapping, so it does not depend on the depth it is
+	// about to help choose.
+	const uniformDepth = effectiveDepth(kept.length, options);
+	const worldPositions = new Float64Array(kept.length * 3);
+	for (let slot = 0; slot < kept.length; slot++) {
+		const { m, v } = kept[slot];
+		worldPositions[slot * 3] = m.vx(v);
+		worldPositions[slot * 3 + 1] = m.vy(v);
+		worldPositions[slot * 3 + 2] = m.vz(v);
+	}
+	const worldOrigin = centre.map((value) => value - extent / 2);
+	const worldSpacing = estimateLocalSpacing(worldPositions, kept.length, worldOrigin, extent);
 
 	const samples: Samples = {
 		count: kept.length,
 		positions: new Float64Array(kept.length * 3),
 		normals: new Float64Array(kept.length * 3),
 		confidence: new Float64Array(kept.length),
+		spacing: new Float64Array(kept.length),
 	};
+	const depth = adaptiveDepth({ ...samples, spacing: worldSpacing }, uniformDepth, extent, options);
+	const span = extent * paddedScale(options.scale, 2 ** depth);
+	// Spacing follows the positions into the cube, so both are in cube units.
+	for (let slot = 0; slot < kept.length; slot++) samples.spacing[slot] = worldSpacing[slot] / span;
 	for (let slot = 0; slot < kept.length; slot++) {
 		const { m, v } = kept[slot];
 		const p = [m.vx(v), m.vy(v), m.vz(v)];
@@ -182,7 +216,7 @@ function toUnitCube(
 		for (let axis = 0; axis < 3; axis++) samples.normals[slot * 3 + axis] /= size;
 		samples.confidence[slot] = options.confidence ? Math.max(0, m.vertQuality[v]) : 1;
 	}
-	return { samples, centre, span, depth };
+	return { samples, centre, span, depth, uniformDepth };
 }
 
 /**
@@ -692,6 +726,127 @@ function extractSurface(
 		}
 	}
 	return out;
+}
+
+/**
+ * Local sample spacing, in the same units as `positions`.
+ *
+ * The samples lie on a *surface*, so a box of side `h` holding `k` of them
+ * covers a patch of area about `h²` — the spacing is `h / sqrt(k)`, not
+ * `h / cbrt(k)`. Using the volumetric exponent here underestimates the spacing
+ * badly and the splats come out too narrow to overlap.
+ *
+ * The grid is sized so an occupied cell holds a handful of samples: for a
+ * surface the occupied cell count grows as `R²`, so `R = sqrt(count / 8)`
+ * averages eight per cell, enough for the count to mean something and cheap
+ * enough to do in one pass.
+ */
+function estimateLocalSpacing(
+	positions: Float64Array,
+	count: number,
+	origin: readonly number[],
+	extent: number,
+): Float64Array {
+	const spacing = new Float64Array(count);
+	if (count === 0) return spacing;
+	if (count < 8 || !(extent > 0)) return spacing.fill(extent > 0 ? extent : 1);
+
+	const resolution = Math.max(2, Math.min(256, Math.round(Math.sqrt(count / 8))));
+	const cell = extent / resolution;
+	const cellOf = (slot: number, axis: number): number =>
+		Math.max(
+			0,
+			Math.min(resolution - 1, Math.floor((positions[slot * 3 + axis] - origin[axis]) / cell)),
+		);
+	const key = (x: number, y: number, z: number): number => x + resolution * (y + resolution * z);
+
+	const buckets = new Map<number, number>();
+	const cells = new Int32Array(count * 3);
+	for (let slot = 0; slot < count; slot++) {
+		for (let axis = 0; axis < 3; axis++) cells[slot * 3 + axis] = cellOf(slot, axis);
+		const id = key(cells[slot * 3], cells[slot * 3 + 1], cells[slot * 3 + 2]);
+		buckets.set(id, (buckets.get(id) ?? 0) + 1);
+	}
+
+	// A 3x3x3 block around each sample, so a sample near a cell edge is not
+	// counted as sparse just for being near an edge.
+	const side = 3 * cell;
+	for (let slot = 0; slot < count; slot++) {
+		let neighbours = 0;
+		for (let dz = -1; dz <= 1; dz++) {
+			const z = cells[slot * 3 + 2] + dz;
+			if (z < 0 || z >= resolution) continue;
+			for (let dy = -1; dy <= 1; dy++) {
+				const y = cells[slot * 3 + 1] + dy;
+				if (y < 0 || y >= resolution) continue;
+				for (let dx = -1; dx <= 1; dx++) {
+					const x = cells[slot * 3] + dx;
+					if (x < 0 || x >= resolution) continue;
+					neighbours += buckets.get(key(x, y, z)) ?? 0;
+				}
+			}
+		}
+		spacing[slot] = side / Math.sqrt(Math.max(1, neighbours));
+	}
+	return spacing;
+}
+
+/** The `fraction` quantile of a copy of `values`, without sorting in place. */
+function percentileOf(values: Float64Array, fraction: number): number {
+	if (values.length === 0) return 0;
+	const sorted = Float64Array.from(values).sort();
+	const index = Math.max(
+		0,
+		Math.min(sorted.length - 1, Math.round(fraction * (sorted.length - 1))),
+	);
+	return sorted[index];
+}
+
+/** How dense the densest part of the cloud is: a low quantile of spacing. */
+const DENSE_QUANTILE = 0.1;
+
+/**
+ * The depth the *densest* region supports, rather than the one the average
+ * does.
+ *
+ * {@link effectiveDepth} sizes the grid from the mean sample density, which is
+ * the right answer only when the density is uniform. A cloud with a well-sampled
+ * front and a thin back gets a grid the back can live with and the front cannot
+ * use — and the front is usually the part that matters. Upstream's octree does
+ * not have this problem because it subdivides locally.
+ *
+ * The scale factor is calibrated against {@link effectiveDepth} on the same
+ * cloud rather than derived from a shape constant: whatever cell size the mean
+ * density would have produced, the same *ratio* to the spacing is applied to
+ * the dense quantile. So a uniform cloud comes out at exactly the depth it
+ * always did, and the depth can only ever increase.
+ */
+function adaptiveDepth(
+	samples: Samples,
+	uniformDepth: number,
+	extent: number,
+	options: PoissonOptions,
+): number {
+	if (samples.count === 0 || !(extent > 0)) return uniformDepth;
+	// Anchored on the root-mean-square spacing, not the median. Each sample
+	// stands for an area of about `spacing²`, so the mean-density formula the
+	// uniform depth came from corresponds to the RMS — and a median taken over
+	// samples sits inside whichever population is *more numerous*, which is the
+	// dense one, making a skewed cloud look uniform.
+	let sumSquares = 0;
+	for (const value of samples.spacing) sumSquares += value * value;
+	const rms = Math.sqrt(sumSquares / samples.count);
+	const dense = percentileOf(samples.spacing, DENSE_QUANTILE);
+	if (!(rms > 0) || !(dense > 0)) return uniformDepth;
+
+	const cellAtUniformDepth = extent / 2 ** uniformDepth;
+	const ratio = cellAtUniformDepth / rms;
+	const targetCell = ratio * dense;
+	if (!(targetCell > 0)) return uniformDepth;
+
+	const wanted = Math.round(Math.log2(extent / targetCell));
+	// Never coarser than the uniform answer, and never past what the caller asked.
+	return Math.max(uniformDepth, Math.min(options.depth, wanted));
 }
 
 /**

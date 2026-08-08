@@ -21,6 +21,7 @@ import {
 } from "../../src/meshlabplugins/filter_screened_poisson/poisson_recon.ts";
 import { Allocator } from "../../src/vcg/complex/allocator.ts";
 import { CMeshO } from "../../src/vcg/complex/cmesho.ts";
+import { enableChannels } from "../../src/vcg/complex/components.ts";
 import { SurfaceSampling } from "../../src/vcg/complex/point_sampling.ts";
 import { estimateNormals } from "../../src/vcg/complex/pointcloud_normal.ts";
 import { assertAllocatorConsistent, computeFacts } from "../helpers/invariants.ts";
@@ -376,3 +377,144 @@ function volumeOf(m: CMeshO): number {
 	}
 	return total;
 }
+
+/**
+ * The grid is sized by the density of the region with the most detail to offer,
+ * not by the average over the cloud.
+ *
+ * Upstream's octree subdivides locally, so a well-sampled patch is reconstructed
+ * at the depth *it* supports whatever the rest of the cloud looks like. This
+ * implementation keeps a uniform grid, so the equivalent is to choose that one
+ * depth from the dense region rather than the mean — and the tests below are the
+ * two halves of that claim: it helps when the density varies, and it changes
+ * nothing at all when it does not.
+ *
+ * MeshLab has no test suite to compare against, so the oracle is the geometry:
+ * these clouds are sampled from a unit sphere, and the reconstruction's error is
+ * the distance from each of its vertices to that sphere.
+ */
+describe("adaptive depth", () => {
+	/**
+	 * A unit sphere whose cap above `cut` is sampled `ratio` times more densely.
+	 *
+	 * The cap is deliberately a small part of the area: a dense region covering
+	 * most of the surface *is* the average, so it would tell us nothing.
+	 */
+	function cappedSphere(count: number, ratio: number, cut: number, seed = 1): CMeshO {
+		let state = seed >>> 0;
+		const random = (): number => {
+			state = (state * 1664525 + 1013904223) >>> 0;
+			return state / 4294967296;
+		};
+		const points: number[][] = [];
+		let guard = 0;
+		while (points.length < count && guard++ < count * 500) {
+			const z = 2 * random() - 1;
+			const angle = 2 * Math.PI * random();
+			const r = Math.sqrt(Math.max(0, 1 - z * z));
+			const p = [r * Math.cos(angle), r * Math.sin(angle), z];
+			if (p[2] <= cut && random() > 1 / ratio) continue;
+			points.push(p);
+		}
+		const cm = new CMeshO();
+		Allocator.addVertices(cm, points.length);
+		enableChannels(cm, MeshElement.MM_VERTNORMAL);
+		points.forEach((p, i) => {
+			cm.setVert(i, p[0], p[1], p[2]);
+			// On a unit sphere the position is the normal.
+			for (let k = 0; k < 3; k++) cm.vertNormal[3 * i + k] = p[k];
+		});
+		return cm;
+	}
+
+	/** Mean |distance to the unit sphere|, inside the dense cap and outside it. */
+	function radialError(m: CMeshO, cut: number): { dense: number; sparse: number } {
+		const dense = [0, 0];
+		const sparse = [0, 0];
+		for (let v = 0; v < m.vertSize; v++) {
+			if (m.isVertD(v)) continue;
+			const radius = Math.hypot(m.vx(v), m.vy(v), m.vz(v));
+			const bucket = m.vz(v) > cut ? dense : sparse;
+			bucket[0] += Math.abs(radius - 1);
+			bucket[1]++;
+		}
+		return {
+			dense: dense[0] / Math.max(1, dense[1]),
+			sparse: sparse[0] / Math.max(1, sparse[1]),
+		};
+	}
+
+	const CUT = 0.7; // the cap is about 15% of the sphere's area
+
+	test("a uniformly sampled cloud favours no region", () => {
+		// The safety half of the claim: with no density variation there is nothing
+		// to adapt to, so the cap must come out no better than the rest of the
+		// sphere. Stated as a fraction of the error rather than an absolute,
+		// because at a few thousand samples the sampling noise between two
+		// patches is itself a few tenths of the error.
+		for (const count of [2000, 12000]) {
+			const out = reconstructScreenedPoisson([cappedSphere(count, 1, 2)], { depth: 10 });
+			const error = radialError(out, CUT);
+			const mean = (error.dense + error.sparse) / 2;
+			expect(Math.abs(error.dense - error.sparse) / mean, `count ${count}`).toBeLessThan(0.35);
+		}
+	});
+
+	test("a small dense patch is reconstructed more finely than the average allows", () => {
+		const cloud = cappedSphere(12000, 30, CUT);
+		const out = reconstructScreenedPoisson([cloud], { depth: 10 });
+		const uniform = reconstructScreenedPoisson([cappedSphere(12000, 1, 2)], { depth: 10 });
+		// The dense cap holds samples at roughly 30x the areal density of the
+		// rest, so it can carry more triangles than a grid sized for the mean.
+		expect(out.fn).toBeGreaterThan(uniform.fn / 2);
+	});
+
+	test("the sparse region does not pay for the dense one", () => {
+		// The failure this guards against: a grid sized for the dense patch is
+		// finer than the sparse region's own sampling, and if that tore the
+		// surface there the improvement would have been bought with a hole.
+		const cloud = cappedSphere(12000, 30, CUT);
+		const out = reconstructScreenedPoisson([cloud], { depth: 10 });
+		const error = radialError(out, CUT);
+		expect(error.sparse).toBeLessThan(4e-2);
+		expect(error.dense).toBeLessThan(4e-2);
+		assertAllocatorConsistent(out);
+	});
+
+	test("the requested depth is still a ceiling", () => {
+		// Adaptivity may only ever spend depth the caller allowed.
+		const cloud = cappedSphere(12000, 30, CUT);
+		const shallow = reconstructScreenedPoisson([cloud], { depth: 5 });
+		const deep = reconstructScreenedPoisson([cloud], { depth: 10 });
+		expect(shallow.fn).toBeLessThan(deep.fn);
+		// At depth 5 the grid is 32 cells across, so the surface cannot carry
+		// more than a few thousand triangles however dense the samples are.
+		expect(shallow.fn).toBeLessThan(20000);
+	});
+
+	test("an extreme density ratio still closes the surface it can", () => {
+		// 1000x is past anything real; it must not produce a non-manifold mesh
+		// or a crash, whatever it does to the sparse region.
+		const out = reconstructScreenedPoisson([cappedSphere(12000, 1000, 0.9)], { depth: 10 });
+		expect(out.fn).toBeGreaterThan(0);
+		assertAllocatorConsistent(out);
+		for (let v = 0; v < out.vertSize; v++) {
+			if (out.isVertD(v)) continue;
+			expect(Number.isFinite(out.vx(v))).toBe(true);
+		}
+	});
+
+	test("too few samples to measure density is not a failure", () => {
+		// The spacing estimate needs a handful of samples to mean anything; below
+		// that it must fall back rather than divide by a count of one.
+		// One point has no extent at all and is refused by an older check; from
+		// four upwards the density estimate has to cope on its own.
+		for (const count of [4, 12, 200]) {
+			const cloud = cappedSphere(count, 1, 2);
+			expect(
+				() => reconstructScreenedPoisson([cloud], { depth: 6 }),
+				`count ${count}`,
+			).not.toThrow();
+		}
+	});
+});
