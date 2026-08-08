@@ -38,17 +38,35 @@ Optionally, in the same settings, restrict publishing access to
 **Require two-factor authentication and disallow tokens** — trusted publishing
 still works, and stolen tokens become useless by construction.
 
+## Versioning: calendar, like MeshLab's own
+
+Versions are **CalVer, `YYYY.M.PATCH`** — the first release of August 2026 is
+`2026.8.0`, a fix on top of it `2026.8.1`, the next month's release `2026.9.0`.
+This matches the upstream culture (MeshLab releases as `2023.12`, PyMeshLab as
+`2025.7.post3`), and it is honest about what a version of a port can promise:
+the compatibility contract lives in the README and the golden suite, not in a
+major-version number.
+
+Two consequences worth knowing:
+
+- npm requires versions to *parse* as semver, which forbids leading zeros:
+  `2026.8.0`, never `2026.08.0`.
+- Semver range operators read the year as a major version: `^2026.8.0` accepts
+  anything in 2026, `~2026.8.0` only `2026.8.x`. Since the year says when a
+  release happened rather than whether it breaks anything, consumers should
+  pin exact versions (a lockfile does this anyway) or use `~`.
+
 ## Every release after that
 
-1. Bump `version` in `package.json` (semver; `0.x` until the golden suite is
-   broad enough to promise more), commit, push, wait for CI.
+1. Set `version` in `package.json` to today's `YYYY.M.PATCH`, commit, push,
+   wait for CI.
 2. Tag and release — the tag **must** be `v` + the exact version, and the
    workflow refuses to publish when they disagree:
 
    ```bash
-   git tag v0.1.1
-   git push origin v0.1.1
-   gh release create v0.1.1 --generate-notes
+   git tag v2026.8.1
+   git push origin v2026.8.1
+   gh release create v2026.8.1 --generate-notes
    ```
 
 3. The `Publish` workflow re-runs the full gate (typecheck, lint, the whole
