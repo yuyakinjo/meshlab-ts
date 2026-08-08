@@ -10,16 +10,19 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 246 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 254 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
 - **filter_clean** (15, complete) — welding, degenerate and duplicate removal, isolated pieces,
   non-manifold edge and vertex repair, T-vertices, removal by quality, wedge-UV merging,
   mismatched-border snapping, and ball-pivoting surface reconstruction
-- **filter_meshing** (17) — re-orientation, hole closing, QEM decimation, transforms,
-  point-cloud normal estimation and smoothing, Loop/Butterfly/midpoint subdivision,
-  isotropic explicit remeshing, clustering decimation, principal curvature directions
+- **filter_meshing** (25 of 37) — re-orientation, hole closing, QEM decimation, the transform
+  family (scale, centre, rotate, freeze, reset, explicit matrix, translation/rotation/scale,
+  inversion, axis flip and swap, principal-axis alignment, rotate-to-fit-a-plane), point-cloud
+  normal estimation and smoothing, Loop/Butterfly/midpoint subdivision, isotropic explicit
+  remeshing, clustering decimation, principal curvature directions, crease-edge selection,
+  polygon-to-triangle conversion
 - **filter_select** (24, complete) — selection and deletion, dilation and erosion, selection by
   vertex/face quality, by colour in RGB or HSV, by view angle, by edge length, by connectivity,
   by triangle shape and fold, by local outlier probability, by self-intersection, and by
@@ -95,7 +98,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 36 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 28 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -209,6 +212,15 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **`Align to Principal Axis` orders its axes oppositely in its two modes.** Both take the
+  eigenvalues ascending, but a covariance eigenvalue grows with the spread along its axis while a
+  moment of inertia shrinks with it — so the point mode puts the longest axis on Z and the
+  inertia mode puts it on X. Upstream has the same asymmetry, because it too simply sorts
+  whichever matrix it was handed. Reproduced rather than reconciled, since scripts depend on the
+  actual behaviour; both directions are pinned by tests.
+- **A mirroring transform re-winds the faces.** A flip has determinant -1, so applying it to the
+  coordinates alone would leave every face wound backwards and the solid inside out. The
+  transform compensates, which is why a flip preserves the signed volume instead of negating it.
 - **Qhull is replaced, not bound.** MeshLab links Qhull for a convex hull and a Delaunay
   triangulation; both are written here instead — quickhull and Bowyer-Watson, in
   `vcg/space/`. Neither uses exact predicates: degeneracy is handled with a scale-relative

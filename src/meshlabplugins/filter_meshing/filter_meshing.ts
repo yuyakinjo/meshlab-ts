@@ -13,6 +13,7 @@ import {
 	RichEnum,
 	RichFloat,
 	RichInt,
+	RichMatrix44,
 	RichPercentage,
 	RichPosition,
 } from "../../common/parameters/rich_parameter.ts";
@@ -30,7 +31,9 @@ import { MLException, MLNotImplementedException } from "../../common/utilities/m
 import { Allocator } from "../../vcg/complex/allocator.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
 import type { CMeshO } from "../../vcg/complex/cmesho.ts";
+import { CreaseCut } from "../../vcg/complex/crease_cut.ts";
 import { UpdateCurvature as Curvature } from "../../vcg/complex/curvature.ts";
+import { FaceFlag, VertexFlag } from "../../vcg/complex/flags.ts";
 import { Hole } from "../../vcg/complex/hole.ts";
 import { Inertia } from "../../vcg/complex/inertia.ts";
 import { IsotropicRemeshing } from "../../vcg/complex/isotropic_remeshing.ts";
@@ -43,6 +46,7 @@ import { Refine } from "../../vcg/complex/refine.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdatePosition } from "../../vcg/complex/update/position.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
+import { covariance, fitPlaneToPointSet, symmetricEigen3 } from "../../vcg/math/eigen3.ts";
 import { Matrix44Ops } from "../../vcg/math/matrix44.ts";
 import { colorRamp } from "../../vcg/space/color4.ts";
 
@@ -64,6 +68,14 @@ export const FP = {
 	FP_EXPLICIT_ISOTROPIC_REMESHING: 14,
 	FP_CLUSTERING: 15,
 	FP_COMPUTE_PRINC_CURV_DIR: 16,
+	FP_INVERT_TRANSFORM: 17,
+	FP_SET_TRANSFORM_MATRIX: 18,
+	FP_SET_TRANSFORM_PARAMS: 19,
+	FP_PRINCIPAL_AXIS: 20,
+	FP_FLIP_AND_SWAP: 21,
+	FP_ROTATE_FIT: 22,
+	FP_FAUX_CREASE: 23,
+	FP_MAKE_PURE_TRI: 24,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -229,6 +241,74 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		filterClass: FilterClass.Normal | FilterClass.PointSet,
 		requirements: MeshElement.MM_NONE,
 	},
+	[FP.FP_INVERT_TRANSFORM]: {
+		name: "Matrix: Invert Current Matrix",
+		pythonName: "apply_matrix_inverse",
+		info:
+			"Invert the current transformation matrix. The current transformation is reversed, " +
+			"becoming its own inverse.",
+		filterClass: FilterClass.Layer | FilterClass.Normal,
+		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_SET_TRANSFORM_MATRIX]: {
+		name: "Matrix: Set/Copy Transformation",
+		pythonName: "set_matrix",
+		info: "Set the current transformation matrix by filling it, or copying from another layer.",
+		filterClass: FilterClass.Layer | FilterClass.Normal,
+		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_SET_TRANSFORM_PARAMS]: {
+		name: "Matrix: Set from translation/rotation/scale",
+		pythonName: "compute_matrix_from_translation_rotation_scale",
+		info: "Set the current transformation matrix starting from parameters: translation, rotation and scale.",
+		filterClass: FilterClass.Layer | FilterClass.Normal,
+		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_PRINCIPAL_AXIS]: {
+		name: "Transform: Align to Principal Axis",
+		pythonName: "compute_matrix_by_principal_axis",
+		info:
+			"Generate a matrix transformation that aligns the mesh to its principal axes of inertia." +
+			"<br>If the mesh has no faces, the vertex set is used instead.",
+		filterClass: FilterClass.Normal,
+		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_FLIP_AND_SWAP]: {
+		name: "Transform: Flip and/or swap axis",
+		pythonName: "apply_matrix_flip_or_swap_axis",
+		info:
+			"Generate a matrix transformation that flips each one of the axis or swaps a couple of " +
+			"axis. The listed transformations are applied in that order. This kind of transformation " +
+			"cannot be applied to set of Raster!",
+		filterClass: FilterClass.Normal,
+		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_ROTATE_FIT]: {
+		name: "Transform: Rotate to Fit to a plane",
+		pythonName: "compute_matrix_by_fitting_to_plane",
+		info:
+			"Generate a matrix transformation that rotates the mesh. The mesh is rotated according " +
+			"to the fitting plane of the selected vertices.",
+		filterClass: FilterClass.Normal,
+		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_FAUX_CREASE]: {
+		name: "Select Crease Edges",
+		pythonName: "compute_selection_crease_per_edge",
+		info:
+			"It select the crease edges of a mesh according to edge dihedral angle.<br>Angle between " +
+			"face normal is considered signed according to convexity/concavity. Convex angles are " +
+			"positive and concave are negative.",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_MAKE_PURE_TRI]: {
+		name: "Turn into a Pure-Triangular mesh",
+		pythonName: "meshing_poly_to_tri",
+		info: "Convert into a tri-mesh by splitting any polygonal face.",
+		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
+		requirements: MeshElement.MM_NONE,
+	},
 };
 
 export class FilterMeshing extends FilterPlugin {
@@ -270,6 +350,22 @@ export class FilterMeshing extends FilterPlugin {
 
 	override initParameterList(id: ActionIDType, m: MeshModel | undefined): RichParameterList {
 		const list = new RichParameterList();
+		/** The two flags every matrix filter shares. */
+		const transformOptions = () => {
+			list.add(
+				new RichBool("allLayers", false, {
+					description: "Apply to all visible Layers",
+					tooltip: "If selected the filter will be applied to all visible mesh layers",
+				}),
+			);
+			list.add(
+				new RichBool("Freeze", true, {
+					description: "Freeze Matrix",
+					tooltip:
+						"The transformation is explicitly applied, and the vertex coordinates are actually changed",
+				}),
+			);
+		};
 		switch (id) {
 			case FP.FP_INVERT_FACES:
 				list.add(
@@ -823,6 +919,141 @@ export class FilterMeshing extends FilterPlugin {
 				);
 				break;
 
+			case FP.FP_INVERT_TRANSFORM:
+				transformOptions();
+				break;
+
+			case FP.FP_SET_TRANSFORM_MATRIX:
+				list.add(
+					new RichMatrix44("TransformMatrix", Array.from(Matrix44Ops.identity()), {
+						description: "Transform Matrix",
+						tooltip: "The matrix to set as the layer's transformation.",
+					}),
+				);
+				list.add(
+					new RichBool("compose", false, {
+						description: "Compose with current",
+						tooltip:
+							"If selected, the given matrix is multiplied onto the layer's current one rather " +
+							"than replacing it.",
+					}),
+				);
+				transformOptions();
+				break;
+
+			case FP.FP_SET_TRANSFORM_PARAMS: {
+				for (const [axis, defval] of [
+					["X", 0],
+					["Y", 0],
+					["Z", 0],
+				] as const) {
+					list.add(
+						new RichFloat(`translation${axis}`, defval, {
+							description: `Translation on ${axis}`,
+							tooltip: `Translation factor on ${axis} axis`,
+						}),
+					);
+				}
+				for (const axis of ["X", "Y", "Z"] as const) {
+					list.add(
+						new RichFloat(`rotation${axis}`, 0, {
+							description: `Rotation on ${axis}`,
+							tooltip: `Rotation angle on ${axis} axis, in degrees`,
+						}),
+					);
+				}
+				for (const axis of ["X", "Y", "Z"] as const) {
+					list.add(
+						new RichFloat(`scale${axis}`, 1, {
+							description: `Scale on ${axis}`,
+							tooltip: `Scaling factor on ${axis} axis`,
+						}),
+					);
+				}
+				list.add(
+					new RichBool("compose", false, {
+						description: "Compose with current",
+						tooltip:
+							"If selected, the built matrix is multiplied onto the layer's current one rather " +
+							"than replacing it.",
+					}),
+				);
+				transformOptions();
+				break;
+			}
+
+			case FP.FP_PRINCIPAL_AXIS:
+				list.add(
+					new RichBool("pointsFlag", true, {
+						description: "Use vertex",
+						tooltip:
+							"If selected, only the vertices of the mesh are used to compute the Principal Axis. Mandatory for point clouds or for non water tight meshes",
+					}),
+				);
+				transformOptions();
+				break;
+
+			case FP.FP_FLIP_AND_SWAP:
+				for (const [name, label] of [
+					["flipX", "Flip X axis"],
+					["flipY", "Flip Y axis"],
+					["flipZ", "Flip Z axis"],
+				] as const) {
+					list.add(
+						new RichBool(name, false, {
+							description: label,
+							tooltip: `If selected the axis will be swapped (mesh mirrored along the ${name.slice(-1)} axis)`,
+						}),
+					);
+				}
+				for (const [name, label] of [
+					["swapXY", "Swap X-Y axis"],
+					["swapXZ", "Swap X-Z axis"],
+					["swapYZ", "Swap Y-Z axis"],
+				] as const) {
+					list.add(
+						new RichBool(name, false, {
+							description: label,
+							tooltip: `If selected the two axis will be swapped. All the swaps are performed in this order`,
+						}),
+					);
+				}
+				transformOptions();
+				break;
+
+			case FP.FP_ROTATE_FIT:
+				list.add(
+					new RichEnum("targetPlane", 0, ["XY plane", "YZ plane", "ZX plane"], {
+						description: "Rotate to fit:",
+						tooltip: "Choose the plane where the selection will fit",
+					}),
+				);
+				list.add(
+					new RichEnum("rotAxis", 0, ["any axis", "X axis", "Y axis", "Z axis"], {
+						description: "Rotate on:",
+						tooltip:
+							"Choose on which axis do the rotation: 'any axis' guarantee the best fit of the " +
+							"selection to the plane, only use X,Y or Z it if you want to preserve that axis.",
+					}),
+				);
+				transformOptions();
+				break;
+
+			case FP.FP_FAUX_CREASE:
+				list.add(
+					new RichFloat("AngleDegNeg", -30, {
+						description: "Concave Angle Thr. (deg)",
+						tooltip: "Concave dihedral angle threshold",
+					}),
+				);
+				list.add(
+					new RichFloat("AngleDegPos", 30, {
+						description: "Convex Angle Thr. (deg)",
+						tooltip: "Convex dihedral angle threshold",
+					}),
+				);
+				break;
+
 			default:
 				break;
 		}
@@ -1201,12 +1432,191 @@ export class FilterMeshing extends FilterPlugin {
 				return { vertices: cm.vn };
 			}
 
+			case FP.FP_INVERT_TRANSFORM:
+			case FP.FP_SET_TRANSFORM_MATRIX:
+			case FP.FP_SET_TRANSFORM_PARAMS:
+			case FP.FP_PRINCIPAL_AXIS:
+			case FP.FP_FLIP_AND_SWAP:
+			case FP.FP_ROTATE_FIT: {
+				const built = this.buildMatrix(id, params, doc, m);
+				const targets = params.getBool("allLayers") ? doc.visibleMeshes() : [m];
+				const freeze = params.getBool("Freeze");
+				// `compose` multiplies onto whatever the layer already carries;
+				// otherwise the matrix replaces it outright. Inversion is the odd
+				// one out: it has nothing to compose and acts on the layer's own
+				// matrix rather than on a new one.
+				const compose = params.hasParameter("compose") ? params.getBool("compose") : true;
+				for (const layer of targets) {
+					if (id === FP.FP_INVERT_TRANSFORM) {
+						const inverse = Matrix44Ops.invert(layer.cm.transformMatrix);
+						if (inverse === null) {
+							throw new MLException(
+								`The transformation matrix of "${layer.label()}" is singular and cannot be inverted.`,
+							);
+						}
+						layer.cm.transformMatrix = inverse;
+					} else if (compose) {
+						layer.cm.transformMatrix = Matrix44Ops.multiply(built, layer.cm.transformMatrix);
+					} else {
+						layer.cm.transformMatrix = built;
+					}
+					if (freeze) {
+						UpdatePosition.applyMatrix(layer.cm, layer.cm.transformMatrix);
+						layer.cm.transformMatrix = Matrix44Ops.identity();
+					}
+					layer.updateBoxAndNormals();
+				}
+				post.mask = freeze ? GEOMETRY_AND_TOPOLOGY : MeshElement.MM_TRANSFMATRIX;
+				return { ...this.lastMatrixOutput, matrix: Array.from(built) };
+			}
+
+			case FP.FP_FAUX_CREASE: {
+				UpdateTopology.faceFace(cm);
+				const negative = (params.getFloat("AngleDegNeg") * Math.PI) / 180;
+				const positive = (params.getFloat("AngleDegPos") * Math.PI) / 180;
+				CreaseCut.faceEdgeSelSignedCrease(cm, negative, positive);
+				let selected = 0;
+				for (let f = 0; f < cm.faceSize; f++) {
+					if (cm.isFaceD(f)) continue;
+					for (let e = 0; e < 3; e++) {
+						if ((cm.faceFlags[f] & (FaceFlag.FACEEDGESEL0 << e)) !== 0) selected++;
+					}
+				}
+				// Each interior crease is counted from both of its faces.
+				doc.Log.log(`Selected ${selected} crease edge sides`);
+				post.mask = MeshElement.MM_NONE;
+				return { selected_edges: selected };
+			}
+
+			case FP.FP_MAKE_PURE_TRI: {
+				// A "polygon" here is triangles joined by faux edges, so turning
+				// the mesh pure-triangular is exactly forgetting which edges were
+				// faux — no geometry changes at all.
+				let cleared = 0;
+				for (let f = 0; f < cm.faceSize; f++) {
+					if (cm.isFaceD(f)) continue;
+					if ((cm.faceFlags[f] & FaceFlag.FAUX012) !== 0) cleared++;
+					cm.faceFlags[f] &= ~FaceFlag.FAUX012;
+				}
+				m.clearDataMask(MeshElement.MM_POLYGONAL);
+				m.updateBoxAndNormals();
+				doc.Log.log(`Cleared the faux flags of ${cleared} faces`);
+				return { face_number: cm.fn };
+			}
+
 			default:
 				return this.wrongActionCalled(id);
 		}
 	}
 
 	/** Builds the matrix a transform filter describes. */
+	/**
+	 * Extra numbers the last `buildMatrix` call wants to report — the fitting
+	 * plane's normal and error, which only `Rotate to Fit` produces.
+	 */
+	private lastMatrixOutput: FilterOutput = {};
+
+	/** The matrix each of the six matrix filters wants applied. */
+	private buildMatrix(
+		id: ActionIDType,
+		params: RichParameterList,
+		doc: MeshDocument,
+		m: MeshModel,
+	): Float64Array {
+		this.lastMatrixOutput = {};
+		switch (id) {
+			// Inversion works on the layer's own matrix, so there is nothing to
+			// build here; the caller handles it.
+			case FP.FP_INVERT_TRANSFORM:
+				return Matrix44Ops.identity();
+
+			case FP.FP_SET_TRANSFORM_MATRIX:
+				return Float64Array.from(params.getMatrix44("TransformMatrix"));
+
+			case FP.FP_SET_TRANSFORM_PARAMS: {
+				const t = Matrix44Ops.translation(
+					params.getFloat("translationX"),
+					params.getFloat("translationY"),
+					params.getFloat("translationZ"),
+				);
+				// Euler angles in MeshLab's order: X, then Y, then Z, each about
+				// the fixed world axis.
+				let r = Matrix44Ops.identity();
+				for (const [axis, unit] of [
+					["rotationX", [1, 0, 0]],
+					["rotationY", [0, 1, 0]],
+					["rotationZ", [0, 0, 1]],
+				] as const) {
+					const deg = params.getFloat(axis);
+					if (deg === 0) continue;
+					r = Matrix44Ops.multiply(
+						Matrix44Ops.rotation((deg * Math.PI) / 180, unit[0], unit[1], unit[2]),
+						r,
+					);
+				}
+				const s = Matrix44Ops.scaling(
+					params.getFloat("scaleX"),
+					params.getFloat("scaleY"),
+					params.getFloat("scaleZ"),
+				);
+				return Matrix44Ops.multiply(Matrix44Ops.multiply(t, r), s);
+			}
+
+			case FP.FP_FLIP_AND_SWAP: {
+				let tr = Matrix44Ops.identity();
+				const apply = (next: Float64Array) => {
+					tr = Matrix44Ops.multiply(tr, next);
+				};
+				for (const [name, axis] of [
+					["flipX", 0],
+					["flipY", 1],
+					["flipZ", 2],
+				] as const) {
+					if (!params.getBool(name)) continue;
+					const flip = Matrix44Ops.identity();
+					flip[5 * axis] = -1;
+					apply(flip);
+				}
+				for (const [name, a, b] of [
+					["swapXY", 0, 1],
+					["swapXZ", 0, 2],
+					["swapYZ", 1, 2],
+				] as const) {
+					if (!params.getBool(name)) continue;
+					const swap = Matrix44Ops.identity();
+					swap[5 * a] = 0;
+					swap[5 * b] = 0;
+					swap[4 * a + b] = 1;
+					swap[4 * b + a] = 1;
+					apply(swap);
+				}
+				return tr;
+			}
+
+			case FP.FP_PRINCIPAL_AXIS:
+				return principalAxisMatrix(m, params.getBool("pointsFlag"));
+
+			case FP.FP_ROTATE_FIT: {
+				const result = rotateToFitMatrix(
+					m,
+					params.getEnum("targetPlane"),
+					params.getEnum("rotAxis"),
+				);
+				this.lastMatrixOutput = {
+					fitting_plane_avg_error: result.error,
+					fitting_plane_normal: Array.from(result.normal),
+				};
+				doc.Log.log(
+					`Fitting plane normal is [${result.normal.join(", ")}], average error ${result.error}`,
+				);
+				return result.matrix;
+			}
+
+			default:
+				return this.wrongActionCalled(id);
+		}
+	}
+
 	private buildTransform(id: ActionIDType, params: RichParameterList, m: MeshModel): Float64Array {
 		const cm = m.cm;
 		UpdateBounding.box(cm);
@@ -1312,3 +1722,154 @@ function selectedFaceCount(m: MeshModel | undefined): number {
 	for (let f = 0; f < m.cm.faceSize; f++) if (!m.cm.isFaceD(f) && m.cm.isFaceS(f)) n++;
 	return n;
 }
+
+/**
+ * A rotation taking the mesh's principal axes onto the world axes.
+ *
+ * The principal axes are the eigenvectors of the inertia tensor — of the mass
+ * distribution when the mesh is a closed solid, or of the point positions when
+ * `usePoints` is set. A point cloud or an open shell has no interior, so the
+ * mass tensor is meaningless there and the point covariance is the only
+ * sensible answer; upstream defaults to it for the same reason.
+ *
+ * The two modes order their axes *oppositely*, and it is worth knowing before
+ * being surprised by it. Both take the eigenvalues ascending, but a covariance
+ * eigenvalue grows with the spread along its axis while a moment of inertia
+ * shrinks with it. So the covariance mode puts the longest axis last (on Z) and
+ * the inertia mode puts it first (on X). This is upstream's behaviour in both
+ * cases — it simply sorts whichever matrix it was given — and scripts depend on
+ * it, so it is reproduced rather than reconciled.
+ */
+function principalAxisMatrix(m: MeshModel, usePoints: boolean): Float64Array {
+	const cm = m.cm;
+	const points: number[][] = [];
+	for (let v = 0; v < cm.vertSize; v++) {
+		if (!cm.isVertD(v)) points.push([cm.vx(v), cm.vy(v), cm.vz(v)]);
+	}
+	if (points.length < 3) {
+		throw new MLException("Aligning to the principal axes needs at least three points.");
+	}
+
+	let axes: ReadonlyArray<readonly number[]>;
+	if (usePoints || cm.fn === 0) {
+		const centre = [0, 1, 2].map((k) => points.reduce((s, p) => s + p[k], 0) / points.length);
+		axes = symmetricEigen3(covariance(points, centre)).vectors;
+	} else {
+		axes = symmetricEigen3(Inertia.computeMassProperties(cm).inertiaTensor).vectors;
+	}
+
+	// The eigenvectors as rows: that takes world coordinates into the axis
+	// frame, which is the direction "align to" means.
+	const tr = Matrix44Ops.identity();
+	for (let i = 0; i < 3; i++) {
+		for (let j = 0; j < 3; j++) tr[4 * i + j] = axes[i][j];
+	}
+	// An eigenbasis is only defined up to sign, so it can come out
+	// left-handed — which would mirror the mesh rather than rotate it.
+	if (Matrix44Ops.determinant3(tr) < 0) {
+		for (let j = 0; j < 3; j++) tr[8 + j] = -tr[8 + j];
+	}
+	return tr;
+}
+
+/**
+ * A rotation bringing the selection's best-fit plane onto a world plane.
+ *
+ * With `rotAxis` set the rotation is constrained to that one axis, which
+ * cannot generally align the plane exactly but preserves whatever the chosen
+ * axis meant — a scan that is level but rotated wants exactly that.
+ */
+function rotateToFitMatrix(
+	m: MeshModel,
+	targetPlane: number,
+	rotAxis: number,
+): { matrix: Float64Array; normal: number[]; error: number } {
+	const cm = m.cm;
+	selectVerticesFromFacesIfNeeded(cm);
+	const selected: number[][] = [];
+	for (let v = 0; v < cm.vertSize; v++) {
+		if (!cm.isVertD(v) && cm.isVertS(v)) selected.push([cm.vx(v), cm.vy(v), cm.vz(v)]);
+	}
+	if (selected.length < 3) {
+		throw new MLException(
+			"Cannot compute rotation: at least three selected vertices are needed to fit a plane.",
+		);
+	}
+	const plane = fitPlaneToPointSet(selected);
+	if (plane === null) throw new MLException("Cannot compute rotation: the plane fit failed.");
+	const normal = [...plane.normal];
+	const error =
+		selected.reduce(
+			(s, p) => s + Math.abs(p[0] * normal[0] + p[1] * normal[1] + p[2] * normal[2] - plane.offset),
+			0,
+		) / selected.length;
+
+	const target = [
+		[0, 0, 1],
+		[1, 0, 0],
+		[0, 1, 0],
+	][targetPlane];
+
+	let axis: number[];
+	let angle: number;
+	if (rotAxis === 0) {
+		// `cross(target, normal)` with `+acos(target . normal)` is the rotation
+		// carrying the *target* onto the normal. What is wanted is the reverse —
+		// the plane brought onto the target — hence the negative angle.
+		axis = cross3(target, normal);
+		angle = -Math.acos(Math.min(1, Math.max(-1, dot3v(target, normal))));
+	} else {
+		// Constrained: project the normal into the plane perpendicular to the
+		// chosen axis, and measure the angle there.
+		const k = rotAxis - 1;
+		axis = [0, 0, 0];
+		axis[k] = -1;
+		const projected = [...normal];
+		projected[k] = 0;
+		const len = Math.hypot(projected[0], projected[1], projected[2]);
+		if (len === 0) {
+			// The plane already faces along the constrained axis; nothing to do.
+			return { matrix: Matrix44Ops.identity(), normal, error };
+		}
+		for (let i = 0; i < 3; i++) projected[i] /= len;
+		angle = -Math.acos(Math.min(1, Math.max(-1, dot3v(target, projected))));
+		const sign = dot3v(cross3(target, projected), axis);
+		if (sign < 0) angle = -angle;
+		else if (sign === 0) angle = 0;
+	}
+
+	const axisLen = Math.hypot(axis[0], axis[1], axis[2]);
+	if (axisLen === 0 || angle === 0) return { matrix: Matrix44Ops.identity(), normal, error };
+	for (let i = 0; i < 3; i++) axis[i] /= axisLen;
+
+	// Rotate about the selection's own centre, not the origin, so the fit does
+	// not fling the mesh across the scene.
+	const c = plane.centre;
+	const toOrigin = Matrix44Ops.translation(-c[0], -c[1], -c[2]);
+	const back = Matrix44Ops.translation(c[0], c[1], c[2]);
+	const rot = Matrix44Ops.rotation(angle, axis[0], axis[1], axis[2]);
+	return {
+		matrix: Matrix44Ops.multiply(Matrix44Ops.multiply(back, rot), toOrigin),
+		normal,
+		error,
+	};
+}
+
+/** Promotes a face selection to its vertices when no vertex is selected. */
+function selectVerticesFromFacesIfNeeded(cm: CMeshO): void {
+	for (let v = 0; v < cm.vertSize; v++) {
+		if (!cm.isVertD(v) && cm.isVertS(v)) return;
+	}
+	for (let f = 0; f < cm.faceSize; f++) {
+		if (cm.isFaceD(f) || !cm.isFaceS(f)) continue;
+		for (let k = 0; k < 3; k++) cm.vertFlags[cm.fv(f, k)] |= VertexFlag.SELECTED;
+	}
+}
+
+const dot3v = (a: readonly number[], b: readonly number[]): number =>
+	a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a: readonly number[], b: readonly number[]): number[] => [
+	a[1] * b[2] - a[2] * b[1],
+	a[2] * b[0] - a[0] * b[2],
+	a[0] * b[1] - a[1] * b[0],
+];

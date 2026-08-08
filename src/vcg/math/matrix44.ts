@@ -113,7 +113,46 @@ export function determinant3(m: Matrix44): number {
 	);
 }
 
+/**
+ * The inverse of a 4x4 matrix, or null when it is singular.
+ *
+ * Gauss-Jordan on the matrix beside an identity. General rather than
+ * rigid-only, because a layer's transform may include a scale — and a caller
+ * asking to invert one that is singular needs to be told, not handed NaNs.
+ */
+export function invert(m: Matrix44): Matrix44 | null {
+	const a: number[][] = [];
+	for (let r = 0; r < 4; r++) {
+		a.push([...Array.from(m.subarray(4 * r, 4 * r + 4)), ...[0, 0, 0, 0]]);
+		a[r][4 + r] = 1;
+	}
+	let scale = 1e-300;
+	for (let k = 0; k < 16; k++) scale = Math.max(scale, Math.abs(m[k]));
+
+	for (let col = 0; col < 4; col++) {
+		let pivot = col;
+		for (let r = col + 1; r < 4; r++) {
+			if (Math.abs(a[r][col]) > Math.abs(a[pivot][col])) pivot = r;
+		}
+		if (Math.abs(a[pivot][col]) < scale * 1e-14) return null;
+		[a[col], a[pivot]] = [a[pivot], a[col]];
+		const d = a[col][col];
+		for (let k = 0; k < 8; k++) a[col][k] /= d;
+		for (let r = 0; r < 4; r++) {
+			if (r === col) continue;
+			const factor = a[r][col];
+			if (factor === 0) continue;
+			for (let k = 0; k < 8; k++) a[r][k] -= factor * a[col][k];
+		}
+	}
+
+	const out = new Float64Array(16) as Matrix44;
+	for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) out[4 * r + c] = a[r][4 + c];
+	return out;
+}
+
 export const Matrix44Ops = {
+	invert,
 	identity,
 	fromArray,
 	scaling,
