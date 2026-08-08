@@ -186,6 +186,86 @@ export function colorRamp(minf: number, maxf: number, value: number): Color4b {
 	return BLUE;
 }
 
+/**
+ * VCG's `Color4::Scatter`: the `value`-th of `range` colours, ordered so that
+ * successive values land far apart on the hue circle.
+ *
+ * The loop is a bit-reversal — it walks `value` down a binary subdivision of
+ * `[0, range)` and reassembles the hue from the branches taken. Consecutive
+ * values therefore differ in the *high* bit of the result, which is what makes
+ * neighbouring layers or components easy to tell apart, where a plain
+ * `value / range` sweep would give two nearly identical colours.
+ */
+export function scatter(range: number, value: number, sat = 0.3, val = 0.9): Color4b {
+	let b = 0;
+	let m = range;
+	let v = value;
+	for (let k = 1; k < range; k <<= 1) {
+		if (v * 2 >= m) {
+			b += k;
+			v -= (m + 1) >> 1;
+			m >>= 1;
+		} else {
+			m = (m + 1) >> 1;
+		}
+	}
+	return fromHsv((360 * b) / Math.max(1, range), sat, val);
+}
+
+/**
+ * Histogram equalisation over a set of colours.
+ *
+ * Returns a per-channel lookup table: build it from whichever vertices are in
+ * scope, then push every colour through {@link equalizeColor}. Splitting it in
+ * two is what lets the "only on selection" flag mean *both* that the histogram
+ * is built from the selection and that only the selection is rewritten.
+ *
+ * With no channel selected the caller is asking to equalise lightness, and the
+ * fourth table covers that case.
+ */
+export interface EqualizeTables {
+	readonly cdf: readonly Int32Array[];
+}
+
+/** Index of the lightness table in {@link EqualizeTables.cdf}. */
+export const LIGHTNESS_TABLE = 3;
+
+export function buildEqualizeTables(colors: Iterable<Color4b>): EqualizeTables {
+	const cdf = [new Int32Array(256), new Int32Array(256), new Int32Array(256), new Int32Array(256)];
+	for (const c of colors) {
+		cdf[0][red(c)]++;
+		cdf[1][green(c)]++;
+		cdf[2][blue(c)]++;
+		cdf[LIGHTNESS_TABLE][Math.min(255, Math.round(lightness(c)))]++;
+	}
+	for (const table of cdf) {
+		for (let i = 1; i < 256; i++) table[i] += table[i - 1];
+	}
+	return { cdf };
+}
+
+function equalizeValue(table: Int32Array, v: number): number {
+	// The span can be zero when every colour in scope shares one value; there is
+	// nothing to stretch then, so the channel passes through unchanged.
+	const span = table[255] - table[0];
+	return span === 0 ? v : ((table[v] - table[0]) / span) * 255;
+}
+
+export function equalizeColor(c: Color4b, tables: EqualizeTables, channelMask: number): Color4b {
+	const { cdf } = tables;
+	if (channelMask === 0) {
+		const l = Math.min(255, Math.round(lightness(c)));
+		const v = equalizeValue(cdf[LIGHTNESS_TABLE], l);
+		return rgba(v, v, v, 255);
+	}
+	return rgba(
+		channelMask & RED_CHANNEL ? equalizeValue(cdf[0], red(c)) : red(c),
+		channelMask & GREEN_CHANNEL ? equalizeValue(cdf[1], green(c)) : green(c),
+		channelMask & BLUE_CHANNEL ? equalizeValue(cdf[2], blue(c)) : blue(c),
+		255,
+	);
+}
+
 export const Color4 = {
 	red,
 	green,
@@ -203,4 +283,7 @@ export const Color4 = {
 	whiteBalance,
 	fromHsv,
 	colorRamp,
+	scatter,
+	buildEqualizeTables,
+	equalizeColor,
 } as const;

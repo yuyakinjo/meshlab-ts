@@ -527,16 +527,11 @@ describe("registration", () => {
 		expect(grid.getParameterByName("absScaleX").defaultValue.value).toBeCloseTo(0.3, 6);
 	});
 
-	test("the ones needing custom attributes or textures stay unimplemented", () => {
-		for (const name of [
-			"Define New Per Vertex Custom Scalar Attribute",
-			"Define New Per Face Custom Scalar Attribute",
-			"Define New Per Vertex Custom Point Attribute",
-			"Define New Per Face Custom Point Attribute",
-			"Per Vertex Texture Function",
-			"Per Wedge Texture Function",
-		]) {
-			expect(kernel.filterAction(name).implemented, name).toBe(false);
-		}
+	test("every filter in the plugin is implemented", () => {
+		const pending = kernel
+			.filterList()
+			.filter((f) => f.plugin.pluginName() === "FilterFunc" && !f.implemented)
+			.map((f) => f.name);
+		expect(pending).toEqual([]);
 	});
 });

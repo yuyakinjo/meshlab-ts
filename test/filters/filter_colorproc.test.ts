@@ -535,17 +535,13 @@ describe("registration", () => {
 		}
 	});
 
-	test("the ones that need more than geometry stay unimplemented", () => {
-		// Textures are not loaded and histogram equalisation has not been
-		// written — better to say so. (Discrete Curvatures used to be on this
-		// list; it landed with the curvature module.)
-		for (const name of [
-			"Transfer Color: Texture to Vertex",
-			"Equalize Vertex Color",
-			"Saturate Vertex Quality",
-			"Perlin color",
-		]) {
-			expect(kernel.filterAction(name).implemented, name).toBe(false);
-		}
+	test("every filter in the plugin is implemented", () => {
+		// The plugin is complete. A named list of exceptions lived here and went
+		// stale twice as filters landed; asserting the whole set cannot.
+		const pending = kernel
+			.filterList()
+			.filter((f) => f.plugin.pluginName() === "FilterColorProc" && !f.implemented)
+			.map((f) => f.name);
+		expect(pending).toEqual([]);
 	});
 });

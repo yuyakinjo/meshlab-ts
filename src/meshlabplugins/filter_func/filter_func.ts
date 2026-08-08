@@ -36,6 +36,7 @@ import type { CallBackPos } from "../../common/utilities/callback.ts";
 import { MLException } from "../../common/utilities/ml_exception.ts";
 import { Allocator } from "../../vcg/complex/allocator.ts";
 import { CMeshO } from "../../vcg/complex/cmesho.ts";
+import type { CustomAttribute } from "../../vcg/complex/components.ts";
 import { marchingTetrahedra } from "../../vcg/complex/create/marching.ts";
 import { FaceFlag, VertexFlag } from "../../vcg/complex/flags.ts";
 import type { Pos } from "../../vcg/complex/pos.ts";
@@ -59,6 +60,12 @@ export const FF = {
 	FF_GRID: 9,
 	FF_ISOSURFACE: 10,
 	FF_REFINE: 11,
+	FF_DEF_VERT_SCALAR_ATTRIB: 12,
+	FF_DEF_FACE_SCALAR_ATTRIB: 13,
+	FF_DEF_VERT_POINT_ATTRIB: 14,
+	FF_DEF_FACE_POINT_ATTRIB: 15,
+	FF_VERT_TEXTURE_FUNC: 16,
+	FF_WEDGE_TEXTURE_FUNC: 17,
 } as const;
 
 /** The globals every expression sees, describing the mesh's bounding box. */
@@ -186,6 +193,41 @@ export const EDGE_VARIABLES: readonly string[] = [
 
 /** The three coordinates an implicit surface is evaluated at. */
 const ISO_VARIABLES: readonly string[] = ["x", "y", "z"];
+
+/**
+ * The variable names an expression over `domain` may use on this mesh: the
+ * fixed set above, then every custom *scalar* attribute, under its own name.
+ *
+ * Point attributes are stored but deliberately not bound. Upstream asks only
+ * for the scalar handles here, and a three-component value has no single name
+ * an expression could use anyway.
+ */
+function variablesFor(cm: CMeshO, domain: "vert" | "face"): readonly string[] {
+	const base = domain === "vert" ? VERTEX_VARIABLES : FACE_VARIABLES;
+	const custom = scalarAttributes(cm, domain).map((a) => a.name);
+	return custom.length === 0 ? base : [...base, ...custom];
+}
+
+function scalarAttributes(cm: CMeshO, domain: "vert" | "face"): CustomAttribute[] {
+	return cm.customAttrs.filter((a) => a.domain === domain && a.arity === 1);
+}
+
+/**
+ * Upstream's `checkAttributeName`: letters, digits and underscores, not
+ * starting with a digit.
+ *
+ * The rule is not cosmetic — the name becomes a variable in every later
+ * expression, so anything the tokeniser could read as an operator or a number
+ * would silently change what those expressions mean.
+ */
+function checkAttributeName(name: string): void {
+	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+		throw new MLException(
+			`Invalid attribute name "${name}": only letters, numbers and underscores are allowed, ` +
+				"and the name cannot start with a number.",
+		);
+	}
+}
 
 interface FilterSpec {
 	readonly name: string;
@@ -330,6 +372,74 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		requirements: MeshElement.MM_FACEFACETOPO,
 		postCondition: GEOMETRY,
 	},
+	[FF.FF_DEF_VERT_SCALAR_ATTRIB]: {
+		name: "Define New Per Vertex Custom Scalar Attribute",
+		pythonName: "compute_new_custom_scalar_attribute_per_vertex",
+		info:
+			"Add a new Per-Vertex custom scalar attribute to current mesh and fill it with the defined " +
+			"function.<br>Attribute names must contain only letters, numbers and underscores.<br>The name " +
+			"specified for the attribute can be used in other filter functions.<br>",
+		filterClass: FilterClass.Layer,
+		arity: FilterArity.SINGLE_MESH,
+		requirements: MeshElement.MM_NONE,
+		postCondition: MeshElement.MM_NONE,
+	},
+	[FF.FF_DEF_FACE_SCALAR_ATTRIB]: {
+		name: "Define New Per Face Custom Scalar Attribute",
+		pythonName: "compute_new_custom_scalar_attribute_per_face",
+		info:
+			"Add a new Per-Face custom scalar attribute to current mesh and fill it with the defined " +
+			"function.<br>Attribute names must contain only letters, numbers and underscores.<br>The name " +
+			"specified for the attribute can be used in other filter functions.<br>",
+		filterClass: FilterClass.Layer,
+		arity: FilterArity.SINGLE_MESH,
+		requirements: MeshElement.MM_NONE,
+		postCondition: MeshElement.MM_NONE,
+	},
+	[FF.FF_DEF_VERT_POINT_ATTRIB]: {
+		name: "Define New Per Vertex Custom Point Attribute",
+		pythonName: "compute_new_custom_point_attribute_per_vertex",
+		info:
+			"Add a new Per-Vertex custom point attribute to current mesh and fill it with the defined " +
+			"functions.<br>Attribute names must contain only letters, numbers and underscores.<br>The name " +
+			"specified for the attribute can be used in other filter functions.<br>",
+		filterClass: FilterClass.Layer,
+		arity: FilterArity.SINGLE_MESH,
+		requirements: MeshElement.MM_NONE,
+		postCondition: MeshElement.MM_NONE,
+	},
+	[FF.FF_DEF_FACE_POINT_ATTRIB]: {
+		name: "Define New Per Face Custom Point Attribute",
+		pythonName: "compute_new_custom_point_attribute_per_face",
+		info:
+			"Add a new Per-Face custom point attribute to current mesh and fill it with the defined " +
+			"functions.<br>Attribute names must contain only letters, numbers and underscores.<br>The name " +
+			"specified for the attribute can be used in other filter functions.<br>",
+		filterClass: FilterClass.Layer,
+		arity: FilterArity.SINGLE_MESH,
+		requirements: MeshElement.MM_NONE,
+		postCondition: MeshElement.MM_NONE,
+	},
+	[FF.FF_VERT_TEXTURE_FUNC]: {
+		name: "Per Vertex Texture Function",
+		pythonName: "compute_texcoord_by_function_per_vertex",
+		info: "Texture function using muparser to generate new texture coords for every vertex<br>",
+		filterClass: FilterClass.Texture,
+		arity: FilterArity.SINGLE_MESH,
+		requirements: MeshElement.MM_VERTTEXCOORD,
+		postCondition: MeshElement.MM_VERTTEXCOORD,
+	},
+	[FF.FF_WEDGE_TEXTURE_FUNC]: {
+		name: "Per Wedge Texture Function",
+		pythonName: "compute_texcoord_by_function_per_wedge",
+		info:
+			"Texture function using muparser to generate new per wedge tex coords for every face<br>" +
+			"Insert six functions each u v for each one of the three vertex of a face<br>",
+		filterClass: FilterClass.Texture,
+		arity: FilterArity.SINGLE_MESH,
+		requirements: MeshElement.MM_WEDGTEXCOORD,
+		postCondition: MeshElement.MM_WEDGTEXCOORD,
+	},
 };
 
 export class FilterFunc extends FilterPlugin {
@@ -371,15 +481,23 @@ export class FilterFunc extends FilterPlugin {
 
 	override initParameterList(id: ActionIDType, _m: MeshModel | undefined): RichParameterList {
 		const list = new RichParameterList();
-		const onSelected = () =>
+		const onSelected = (element = "vertices") =>
 			list.add(
 				new RichBool("onselected", false, {
 					description: "only on selection",
-					tooltip: "If checked, only affects selected vertices",
+					tooltip: `If checked, only affects selected ${element}`,
 				}),
 			);
 		const expr = (name: string, defval: string, description: string, tooltip = "") =>
 			list.add(new RichString(name, defval, { description, tooltip }));
+		const attributeName = () =>
+			list.add(
+				new RichString("name", "CustomAttrName", {
+					description: "Name",
+					tooltip:
+						"the name of new attribute. you can access attribute in other filters through this name",
+				}),
+			);
 
 		switch (id) {
 			case FF.FF_VERT_SELECTION:
@@ -532,6 +650,59 @@ export class FilterFunc extends FilterPlugin {
 				expr("z", "(z0+z1)/2", "z =", "function to generate z coord of the new vertex");
 				break;
 
+			case FF.FF_VERT_TEXTURE_FUNC:
+				expr("u", "x", "func u = ", "function to generate u texture coord. Expected Range 0-1");
+				expr("v", "y", "func v = ", "function to generate v texture coord. Expected Range 0-1");
+				onSelected("vertices");
+				break;
+
+			case FF.FF_WEDGE_TEXTURE_FUNC:
+				for (let k = 0; k < 3; k++) {
+					expr(
+						`u${k}`,
+						`x${k}`,
+						`func u${k} = `,
+						`function to generate u texture coord. of wedge ${k}. Expected Range 0-1`,
+					);
+					expr(
+						`v${k}`,
+						`y${k}`,
+						`func v${k} = `,
+						`function to generate v texture coord. of wedge ${k}. Expected Range 0-1`,
+					);
+				}
+				onSelected("faces");
+				break;
+
+			case FF.FF_DEF_VERT_SCALAR_ATTRIB:
+			case FF.FF_DEF_FACE_SCALAR_ATTRIB:
+				attributeName();
+				expr(
+					"expr",
+					id === FF.FF_DEF_VERT_SCALAR_ATTRIB ? "x" : "fi",
+					"Scalar function =",
+					`function to calculate custom scalar attribute value for each ${
+						id === FF.FF_DEF_VERT_SCALAR_ATTRIB ? "vertex" : "face"
+					}`,
+				);
+				break;
+
+			case FF.FF_DEF_VERT_POINT_ATTRIB:
+			case FF.FF_DEF_FACE_POINT_ATTRIB: {
+				attributeName();
+				const perVertex = id === FF.FF_DEF_VERT_POINT_ATTRIB;
+				const element = perVertex ? "vertex" : "face";
+				for (const axis of ["x", "y", "z"] as const) {
+					expr(
+						`${axis}_expr`,
+						perVertex ? axis : `${axis}0`,
+						`${axis} coord function =`,
+						`function to calculate custom ${axis} coord of the point attribute value for each ${element}`,
+					);
+				}
+				break;
+			}
+
 			default:
 				break;
 		}
@@ -556,7 +727,10 @@ export class FilterFunc extends FilterPlugin {
 
 		switch (id) {
 			case FF.FF_VERT_SELECTION: {
-				const condition = compileExpression(params.getString("condSelect"), VERTEX_VARIABLES);
+				const condition = compileExpression(
+					params.getString("condSelect"),
+					variablesFor(cm, "vert"),
+				);
 				let selected = 0;
 				forEachVertex(cm, false, (v, values) => {
 					if (condition.evaluate(values) !== 0) {
@@ -569,7 +743,10 @@ export class FilterFunc extends FilterPlugin {
 			}
 
 			case FF.FF_FACE_SELECTION: {
-				const condition = compileExpression(params.getString("condSelect"), FACE_VARIABLES);
+				const condition = compileExpression(
+					params.getString("condSelect"),
+					variablesFor(cm, "face"),
+				);
 				let selected = 0;
 				forEachFace(cm, false, (f, values) => {
 					if (condition.evaluate(values) !== 0) {
@@ -583,7 +760,7 @@ export class FilterFunc extends FilterPlugin {
 
 			case FF.FF_GEOM_FUNC: {
 				const [fx, fy, fz] = ["x", "y", "z"].map((p) =>
-					compileExpression(params.getString(p), VERTEX_VARIABLES),
+					compileExpression(params.getString(p), variablesFor(cm, "vert")),
 				);
 				// Every coordinate is computed from the *old* position, so the
 				// three expressions cannot see each other's output.
@@ -598,7 +775,7 @@ export class FilterFunc extends FilterPlugin {
 
 			case FF.FF_VERT_NORMAL: {
 				const [fx, fy, fz] = ["x", "y", "z"].map((p) =>
-					compileExpression(params.getString(p), VERTEX_VARIABLES),
+					compileExpression(params.getString(p), variablesFor(cm, "vert")),
 				);
 				let n = 0;
 				forEachVertex(cm, onlySelected, (v, values) => {
@@ -612,7 +789,7 @@ export class FilterFunc extends FilterPlugin {
 
 			case FF.FF_FACE_NORMAL: {
 				const [fx, fy, fz] = ["x", "y", "z"].map((p) =>
-					compileExpression(params.getString(p), FACE_VARIABLES),
+					compileExpression(params.getString(p), variablesFor(cm, "face")),
 				);
 				let n = 0;
 				forEachFace(cm, onlySelected, (f, values) => {
@@ -626,7 +803,7 @@ export class FilterFunc extends FilterPlugin {
 
 			case FF.FF_VERT_COLOR: {
 				const [fr, fg, fb, fa] = ["x", "y", "z", "a"].map((p) =>
-					compileExpression(params.getString(p), VERTEX_VARIABLES),
+					compileExpression(params.getString(p), variablesFor(cm, "vert")),
 				);
 				let n = 0;
 				forEachVertex(cm, onlySelected, (v, values) => {
@@ -644,7 +821,7 @@ export class FilterFunc extends FilterPlugin {
 			case FF.FF_FACE_COLOR: {
 				const colors = requireFaceColor(cm);
 				const [fr, fg, fb, fa] = ["r", "g", "b", "a"].map((p) =>
-					compileExpression(params.getString(p), FACE_VARIABLES),
+					compileExpression(params.getString(p), variablesFor(cm, "face")),
 				);
 				let n = 0;
 				forEachFace(cm, onlySelected, (f, values) => {
@@ -664,7 +841,7 @@ export class FilterFunc extends FilterPlugin {
 				const perFace = id === FF.FF_FACE_QUALITY;
 				const fq = compileExpression(
 					params.getString("q"),
-					perFace ? FACE_VARIABLES : VERTEX_VARIABLES,
+					variablesFor(cm, perFace ? "face" : "vert"),
 				);
 				const written: number[] = [];
 				if (perFace) {
@@ -727,6 +904,87 @@ export class FilterFunc extends FilterPlugin {
 				m.updateBoxAndNormals();
 				doc.Log.log(`Refined ${before.vn}/${before.fn} into ${cm.vn} vertices and ${cm.fn} faces`);
 				return { vertex_number: cm.vn, face_number: cm.fn };
+			}
+
+			case FF.FF_VERT_TEXTURE_FUNC: {
+				m.updateDataMask(MeshElement.MM_VERTTEXCOORD);
+				const vt = cm.vertTexCoord as Float64Array;
+				const [fu, fv] = ["u", "v"].map((p) =>
+					compileExpression(params.getString(p), variablesFor(cm, "vert")),
+				);
+				let n = 0;
+				forEachVertex(cm, onlySelected, (v, values) => {
+					vt[2 * v] = fu.evaluate(values);
+					vt[2 * v + 1] = fv.evaluate(values);
+					n++;
+				});
+				return { vertex_number: n };
+			}
+
+			case FF.FF_WEDGE_TEXTURE_FUNC: {
+				m.updateDataMask(MeshElement.MM_WEDGTEXCOORD);
+				const wt = cm.wedgeTexCoord as Float64Array;
+				const vars = variablesFor(cm, "face");
+				// Six expressions, one per wedge coordinate — they all see the same
+				// per-face variables, so a wedge's u may be written from any corner's
+				// position, which is what makes seam-aware unwrapping expressible.
+				const funcs = [0, 1, 2].map((k) => [
+					compileExpression(params.getString(`u${k}`), vars),
+					compileExpression(params.getString(`v${k}`), vars),
+				]);
+				let n = 0;
+				forEachFace(cm, onlySelected, (f, values) => {
+					for (let k = 0; k < 3; k++) {
+						wt[6 * f + 2 * k] = funcs[k][0].evaluate(values);
+						wt[6 * f + 2 * k + 1] = funcs[k][1].evaluate(values);
+					}
+					n++;
+				});
+				return { face_number: n };
+			}
+
+			case FF.FF_DEF_VERT_SCALAR_ATTRIB:
+			case FF.FF_DEF_FACE_SCALAR_ATTRIB: {
+				const perFace = id === FF.FF_DEF_FACE_SCALAR_ATTRIB;
+				const domain = perFace ? "face" : "vert";
+				const name = params.getString("name");
+				checkAttributeName(name);
+				// Compiled *before* the attribute exists, so an expression cannot
+				// read the attribute it is defining — which would otherwise return
+				// whatever the previous run left, or a zero on the first run.
+				const value = compileExpression(params.getString("expr"), variablesFor(cm, domain));
+				const attr = cm.addCustomAttribute(name, domain, 1);
+				let n = 0;
+				const write = (i: number, values: Float64Array) => {
+					attr.data[i] = value.evaluate(values);
+					n++;
+				};
+				if (perFace) forEachFace(cm, false, write);
+				else forEachVertex(cm, false, write);
+				doc.Log.log(`${n} ${perFace ? "faces" : "vertices"} processed`);
+				return perFace ? { face_number: n } : { vertex_number: n };
+			}
+
+			case FF.FF_DEF_VERT_POINT_ATTRIB:
+			case FF.FF_DEF_FACE_POINT_ATTRIB: {
+				const perFace = id === FF.FF_DEF_FACE_POINT_ATTRIB;
+				const domain = perFace ? "face" : "vert";
+				const name = params.getString("name");
+				checkAttributeName(name);
+				const vars = variablesFor(cm, domain);
+				const axes = ["x_expr", "y_expr", "z_expr"].map((p) =>
+					compileExpression(params.getString(p), vars),
+				);
+				const attr = cm.addCustomAttribute(name, domain, 3);
+				let n = 0;
+				const write = (i: number, values: Float64Array) => {
+					for (let a = 0; a < 3; a++) attr.data[3 * i + a] = axes[a].evaluate(values);
+					n++;
+				};
+				if (perFace) forEachFace(cm, false, write);
+				else forEachVertex(cm, false, write);
+				doc.Log.log(`${n} ${perFace ? "faces" : "vertices"} processed`);
+				return perFace ? { face_number: n } : { vertex_number: n };
 			}
 
 			default:
@@ -854,8 +1112,10 @@ function forEachVertex(
 	onlySelected: boolean,
 	fn: (v: number, values: Float64Array) => void,
 ): void {
-	const values = new Float64Array(VERTEX_VARIABLES.length);
+	const attrs = scalarAttributes(cm, "vert");
+	const values = new Float64Array(VERTEX_VARIABLES.length + attrs.length);
 	fillGlobals(cm, values, VERTEX_VARIABLES.indexOf("xmin"));
+	const vt = cm.vertTexCoord;
 	for (let v = 0; v < cm.vertSize; v++) {
 		if (cm.isVertD(v)) continue;
 		if (onlySelected && !cm.isVertS(v)) continue;
@@ -872,12 +1132,15 @@ function forEachVertex(
 		values[9] = alpha(c);
 		values[10] = cm.vertQuality[v];
 		values[11] = v;
-		// Texture coordinates and index are not carried yet; upstream leaves
-		// them at zero for a mesh without them, and so does this.
-		values[12] = 0;
-		values[13] = 0;
+		// A mesh without texture coordinates reads them as zero, as upstream does.
+		values[12] = vt === null ? 0 : vt[2 * v];
+		values[13] = vt === null ? 0 : vt[2 * v + 1];
+		// Per-vertex coordinates carry no texture index; only wedges do.
 		values[14] = 0;
 		values[15] = cm.isVertS(v) ? 1 : 0;
+		for (let i = 0; i < attrs.length; i++) {
+			values[VERTEX_VARIABLES.length + i] = attrs[i].data[v];
+		}
 		fn(v, values);
 	}
 }
@@ -888,9 +1151,12 @@ function forEachFace(
 	onlySelected: boolean,
 	fn: (f: number, values: Float64Array) => void,
 ): void {
-	const values = new Float64Array(FACE_VARIABLES.length);
+	const attrs = scalarAttributes(cm, "face");
+	const values = new Float64Array(FACE_VARIABLES.length + attrs.length);
 	fillGlobals(cm, values, FACE_VARIABLES.indexOf("xmin"));
 	const scratch = new Float64Array(3);
+	const wt = cm.wedgeTexCoord;
+	const wti = cm.wedgeTexIndex;
 	for (let f = 0; f < cm.faceSize; f++) {
 		if (cm.isFaceD(f)) continue;
 		if (onlySelected && !cm.isFaceS(f)) continue;
@@ -909,8 +1175,8 @@ function forEachFace(
 			values[21 + 4 * k] = alpha(c);
 			values[30 + k] = cm.vertQuality[v];
 			values[42 + k] = v;
-			values[45 + 2 * k] = 0;
-			values[46 + 2 * k] = 0;
+			values[45 + 2 * k] = wt === null ? 0 : wt[6 * f + 2 * k];
+			values[46 + 2 * k] = wt === null ? 0 : wt[6 * f + 2 * k + 1];
 			values[53 + k] = cm.isVertS(v) ? 1 : 0;
 		}
 		const fc = cm.faceColor === null ? 0xffffffff : cm.faceColor[f];
@@ -925,8 +1191,13 @@ function forEachFace(
 		values[39] = scratch[2] / len;
 		values[40] = cm.faceQuality === null ? 0 : cm.faceQuality[f];
 		values[41] = f;
-		values[51] = 0;
+		// One texture index per face, matching upstream's single `ti` variable
+		// even though the storage is per corner.
+		values[51] = wti === null ? 0 : wti[3 * f];
 		values[56] = cm.isFaceS(f) ? 1 : 0;
+		for (let i = 0; i < attrs.length; i++) {
+			values[FACE_VARIABLES.length + i] = attrs[i].data[f];
+		}
 		fn(f, values);
 	}
 }

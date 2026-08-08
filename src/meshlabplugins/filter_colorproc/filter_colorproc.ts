@@ -21,6 +21,7 @@ import {
 	RichEnum,
 	RichFloat,
 	RichInt,
+	RichPosition,
 } from "../../common/parameters/rich_parameter.ts";
 import { RichParameterList } from "../../common/parameters/rich_parameter_list.ts";
 import { FilterArity, type FilterArityValue } from "../../common/plugins/filter_arity.ts";
@@ -38,14 +39,18 @@ import type { CMeshO } from "../../vcg/complex/cmesho.ts";
 import { discreteCurvature } from "../../vcg/complex/curvature.ts";
 import { triQuality } from "../../vcg/complex/edge_ops.ts";
 import { Rng } from "../../vcg/complex/point_sampling.ts";
+import { UpdateQuality } from "../../vcg/complex/update/quality.ts";
 import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
+import { PerlinNoise } from "../../vcg/math/noise.ts";
 import {
 	ALL_CHANNELS,
 	alpha,
 	BLUE_CHANNEL,
 	brightnessContrast,
+	buildEqualizeTables,
 	colorRamp,
 	desaturate,
+	equalizeColor,
 	fromHsv,
 	GREEN_CHANNEL,
 	invert,
@@ -54,8 +59,11 @@ import {
 	lightness,
 	RED_CHANNEL,
 	rgba,
+	scatter,
 	whiteBalance,
 } from "../../vcg/space/color4.ts";
+import type { Image } from "../../vcg/space/image/image.ts";
+import { isPng, readPng } from "../../vcg/space/image/png.ts";
 
 export const CP = {
 	CP_FILLING: 0,
@@ -80,6 +88,12 @@ export const CP = {
 	CP_FACE_SMOOTH: 20,
 	CP_TRIANGLE_QUALITY: 21,
 	CP_DISCRETE_CURVATURE: 22,
+	CP_EQUALIZE: 23,
+	CP_PERLIN_COLOR: 24,
+	CP_SCATTER_PER_MESH: 25,
+	CP_SATURATE_QUALITY: 26,
+	CP_MESH_TO_FACE: 27,
+	CP_TEXTURE_TO_VERTEX: 28,
 } as const;
 
 interface FilterSpec {
@@ -275,6 +289,62 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		requirements: F_QUALITY,
 		postCondition: F_QUALITY,
 	},
+	[CP.CP_EQUALIZE]: {
+		name: "Equalize Vertex Color",
+		pythonName: "apply_color_equalization_per_vertex",
+		info: "The filter equalizes the colors histogram. It is a kind of automatic regulation of contrast; the colors histogram is expanded to fit all the range of colors.",
+		filterClass: FilterClass.VertexColoring,
+		requirements: V_COLOR,
+		postCondition: V_COLOR,
+	},
+	[CP.CP_PERLIN_COLOR]: {
+		name: "Perlin color",
+		pythonName: "compute_color_perlin_noise_per_vertex",
+		info: "Paints the mesh using PerlinColor function. The color assigned to vertices depends on their position in the space; it means that near vertices will be painted with similar colors.",
+		filterClass: FilterClass.VertexColoring,
+		requirements: V_COLOR,
+		postCondition: V_COLOR,
+	},
+	[CP.CP_SCATTER_PER_MESH]: {
+		name: "PerMesh Color Scattering",
+		pythonName: "compute_color_scattering_per_mesh",
+		info: "Assigns a random color to each visible mesh layer in the document. Colors change every time the filter is executed, but are always chosen so that they differ as much as possible.",
+		filterClass: FilterClass.MeshColoring,
+		requirements: MeshElement.MM_NONE,
+		postCondition: MeshElement.MM_COLOR,
+	},
+	[CP.CP_SATURATE_QUALITY]: {
+		name: "Saturate Vertex Quality",
+		pythonName: "apply_scalar_saturation_per_vertex",
+		info:
+			"Saturate vertex quality, so that for each vertex the gradient of the quality is lower than " +
+			"the given threshold value (in absolute value)\nThe saturation is done in a conservative way " +
+			"(quality is always decreased and never increased)",
+		filterClass: FilterClass.Quality,
+		requirements: V_QUALITY | MeshElement.MM_VERTFACETOPO,
+		postCondition: V_QUALITY,
+	},
+	[CP.CP_MESH_TO_FACE]: {
+		name: "Transfer Color: Mesh to Face",
+		pythonName: "compute_color_transfer_mesh_to_face",
+		info: "Mesh to Face color transfer",
+		filterClass: FilterClass.FaceColoring,
+		requirements: F_COLOR,
+		postCondition: F_COLOR,
+	},
+	[CP.CP_TEXTURE_TO_VERTEX]: {
+		name: "Transfer Color: Texture to Vertex",
+		pythonName: "compute_color_from_texture_per_vertex",
+		info: "Texture to Vertex color transfer",
+		filterClass: FilterClass.VertexColoring,
+		// Deliberately *not* requiring MM_WEDGTEXCOORD. Listing it would have the
+		// framework allocate zeroed coordinates for a mesh that has none, and the
+		// filter would then happily sample (0, 0) for every vertex. Upstream
+		// silently returns instead; both hide the mistake, so this asks for the
+		// coordinates itself and says so when they are missing.
+		requirements: V_COLOR,
+		postCondition: V_COLOR,
+	},
 };
 
 export class FilterColorProc extends FilterPlugin {
@@ -304,8 +374,10 @@ export class FilterColorProc extends FilterPlugin {
 	override getClass(id: ActionIDType): FilterClassMask {
 		return this.spec(id).filterClass;
 	}
-	filterArity(_id: ActionIDType): FilterArityValue {
-		return FilterArity.SINGLE_MESH;
+	filterArity(id: ActionIDType): FilterArityValue {
+		// Scattering picks colours that differ across the whole document, so how
+		// many layers there are is part of its input rather than a loop it runs.
+		return id === CP.CP_SCATTER_PER_MESH ? FilterArity.VARIABLE : FilterArity.SINGLE_MESH;
 	}
 	override getRequirements(id: ActionIDType): number {
 		return this.spec(id).requirements;
@@ -555,6 +627,96 @@ export class FilterColorProc extends FilterPlugin {
 							tooltip: "Choose a metric to compute triangle quality.",
 						},
 					),
+				);
+				break;
+
+			case CP.CP_EQUALIZE:
+				list.add(
+					new RichBool("rCh", true, {
+						description: "Red Channel:",
+						tooltip: "Select the red channel.",
+					}),
+				);
+				list.add(
+					new RichBool("gCh", true, {
+						description: "Green Channel:",
+						tooltip: "Select the green channel.",
+					}),
+				);
+				list.add(
+					new RichBool("bCh", true, {
+						description: "Blue Channel:",
+						tooltip:
+							"Select the blue channel.<br><br>If no channel is selected<br>filter works on Lightness.",
+					}),
+				);
+				onSelected();
+				break;
+
+			case CP.CP_PERLIN_COLOR:
+				list.add(
+					new RichColor("color1", rgba(0, 0, 0), {
+						description: "Color 1:",
+						tooltip: "Sets the first color to mix with Perlin Noise function.",
+					}),
+				);
+				list.add(
+					new RichColor("color2", rgba(255, 255, 255), {
+						description: "Color 2:",
+						tooltip: "Sets the second color to mix with Perlin Noise function.",
+					}),
+				);
+				list.add(
+					new RichDynamicFloat("freq", 10, 0.1, 100, {
+						description: "Frequency:",
+						tooltip:
+							"Frequency of the Perlin Noise function, expressed as multiples of mesh bbox " +
+							"(frequency 10 means a noise period of bbox diagonal / 10). High frequencies produces " +
+							"many small splashes of colours, while low frequencies produces few big splashes.",
+					}),
+				);
+				list.add(
+					new RichPosition("offset", [0, 0, 0], {
+						description: "Offset",
+						tooltip:
+							"This values is the XYZ frequency offset of the Noise function (offset 1 means 1 period shift).",
+					}),
+				);
+				onSelected();
+				break;
+
+			case CP.CP_SCATTER_PER_MESH:
+				list.add(
+					new RichInt("seed", 0, {
+						description: "Seed",
+						tooltip:
+							"Random seed used to generate scattered colors. Zero means totally random (each time " +
+							"the filter is started it generates a different result)",
+					}),
+				);
+				break;
+
+			case CP.CP_SATURATE_QUALITY:
+				list.add(
+					new RichFloat("gradientThr", 1, {
+						description: "Gradient Threshold",
+						tooltip: "The maximum value admitted for the quality gradient (in absolute value)",
+					}),
+				);
+				list.add(
+					new RichBool("updateColor", false, {
+						description: "Update ColorMap",
+						tooltip: "if true the color ramp is computed again",
+					}),
+				);
+				break;
+
+			case CP.CP_MESH_TO_FACE:
+				list.add(
+					new RichBool("allVisibleMesh", false, {
+						description: "Apply to all Meshes",
+						tooltip: "If true the color mapping is applied to all the meshes.",
+					}),
 				);
 				break;
 
@@ -885,11 +1047,196 @@ export class FilterColorProc extends FilterPlugin {
 				return { face_number: n };
 			}
 
+			case CP.CP_EQUALIZE: {
+				const mask =
+					(params.getBool("rCh") ? RED_CHANNEL : 0) |
+					(params.getBool("gCh") ? GREEN_CHANNEL : 0) |
+					(params.getBool("bCh") ? BLUE_CHANNEL : 0);
+				// The histogram is built from exactly the vertices that will be
+				// rewritten — equalising a selection against the whole mesh's
+				// distribution would not stretch the selection to fill the range,
+				// which is the one thing the filter is for.
+				const inScope: number[] = [];
+				for (let v = 0; v < cm.vertSize; v++) {
+					if (cm.isVertD(v)) continue;
+					if (only && !cm.isVertS(v)) continue;
+					inScope.push(cm.vertColor[v]);
+				}
+				const tables = buildEqualizeTables(inScope);
+				return mapVertices(cm, only, (c) => equalizeColor(c, tables, mask));
+			}
+
+			case CP.CP_PERLIN_COLOR: {
+				const c1 = params.getColor("color1");
+				const c2 = params.getColor("color2");
+				// The period is taken from the *document* box, not this layer's, so
+				// running the filter over several layers paints one continuous field
+				// across them rather than a differently scaled one on each.
+				const period = doc.bbox().diagonal / params.getDynamicFloat("freq");
+				if (!(period > 0)) {
+					throw new MLException("The mesh has no extent, so there is no noise period to use.");
+				}
+				const offset = params.getPoint3m("offset");
+				// A fixed permutation, because upstream's `math::Perlin` is one
+				// hard-coded table: the same point must give the same colour on
+				// every run, or the offset parameter would mean nothing.
+				return perlinPaint(cm, only, new PerlinNoise(PERLIN_SEED), period, offset, c1, c2);
+			}
+
+			case CP.CP_SCATTER_PER_MESH: {
+				const seed = params.getInt("seed");
+				const layers = doc.meshNumber();
+				if (layers === 0) return { mesh_number: 0 };
+				// Zero means "different every run", which is what makes the filter
+				// usable as a way to tell layers apart after adding one.
+				const rng = new Rng(seed === 0 ? undefined : seed);
+				let id = Math.min(layers - 1, Math.floor(rng.next() * layers));
+				let painted = 0;
+				for (const layer of doc.meshIterator()) {
+					if (layer.isVisible()) {
+						layer.cm.color = scatter(layers, id);
+						painted++;
+					}
+					id = (id + 1) % layers;
+				}
+				doc.Log.log(`Scattered a colour over ${painted} visible layers`);
+				return { mesh_number: painted };
+			}
+
+			case CP.CP_SATURATE_QUALITY: {
+				m.updateDataMask(MeshElement.MM_VERTFACETOPO);
+				const threshold = params.getFloat("gradientThr");
+				if (!(threshold > 0)) {
+					throw new MLException(`The gradient threshold must be positive, got ${threshold}`);
+				}
+				UpdateQuality.vertexSaturate(cm, threshold);
+				if (params.getBool("updateColor")) {
+					m.updateDataMask(V_COLOR);
+					const live = liveQuality(cm, false);
+					// The 10th/90th percentile crop is upstream's: a ramp stretched
+					// over the outliers shows nothing but the outliers.
+					const range = resolveRange(live, 0, 0, 10);
+					for (let v = 0; v < cm.vertSize; v++) {
+						if (!cm.isVertD(v))
+							cm.vertColor[v] = colorRamp(range.min, range.max, cm.vertQuality[v]);
+					}
+				}
+				doc.Log.log("Saturated Vertex Quality");
+				return { vertex_number: cm.vn };
+			}
+
+			case CP.CP_MESH_TO_FACE: {
+				const targets = params.getBool("allVisibleMesh") ? doc.visibleMeshes() : [m];
+				let n = 0;
+				for (const layer of targets) {
+					layer.updateDataMask(F_COLOR);
+					const colors = requireFaceColor(layer.cm);
+					const c = layer.cm.color;
+					for (let f = 0; f < layer.cm.faceSize; f++) {
+						if (layer.cm.isFaceD(f)) continue;
+						colors[f] = c;
+						n++;
+					}
+				}
+				return { face_number: n };
+			}
+
+			case CP.CP_TEXTURE_TO_VERTEX: {
+				const wt = cm.wedgeTexCoord;
+				if (wt === null) {
+					throw new MLException(
+						"Transfer Color: Texture to Vertex needs per-wedge texture coordinates, which this mesh has none of.",
+					);
+				}
+				const images = cm.textures.map((name) => {
+					const bytes = m.textures.get(name);
+					if (bytes === undefined) throw new MLException(`Source texture "${name}" is missing`);
+					if (!isPng(bytes)) {
+						throw new MLNotImplementedException(
+							`Only PNG textures can be read so far, and "${name}" is not one.`,
+							"FilterColorProc",
+						);
+					}
+					return readPng(bytes);
+				});
+				const index = cm.wedgeTexIndex;
+				let n = 0;
+				for (let f = 0; f < cm.faceSize; f++) {
+					if (cm.isFaceD(f)) continue;
+					for (let k = 0; k < 3; k++) {
+						const ti = index === null ? 0 : index[3 * f + k];
+						const image = ti >= 0 && ti < images.length ? images[ti] : null;
+						// A wedge pointing at no texture is white rather than an
+						// error: a mesh can be partly textured, and refusing the
+						// whole transfer over one such face helps nobody.
+						cm.vertColor[cm.fv(f, k)] =
+							image === null
+								? rgba(255, 255, 255)
+								: sampleWrapped(image, wt[6 * f + 2 * k], wt[6 * f + 2 * k + 1]);
+						n++;
+					}
+				}
+				return { vertex_number: n };
+			}
+
 			default:
 				return this.wrongActionCalled(id);
 		}
 	}
 }
+
+/**
+ * Blends the two colours by a Perlin field sampled at each vertex.
+ *
+ * Factor 1 is `color1`, which reads backwards until you notice that upstream
+ * writes `c1 * factor + c2 * (1 - factor)`; keeping the same sense keeps the
+ * two parameters meaning what a MeshLab user expects.
+ */
+function perlinPaint(
+	cm: CMeshO,
+	onlySelected: boolean,
+	noise: PerlinNoise,
+	period: number,
+	offset: readonly number[],
+	c1: number,
+	c2: number,
+): FilterOutput {
+	let n = 0;
+	for (let v = 0; v < cm.vertSize; v++) {
+		if (cm.isVertD(v)) continue;
+		if (onlySelected && !cm.isVertS(v)) continue;
+		const factor =
+			(noise.at(
+				cm.vx(v) / period + offset[0],
+				cm.vy(v) / period + offset[1],
+				cm.vz(v) / period + offset[2],
+			) +
+				1) /
+			2;
+		cm.vertColor[v] = lerpColor(c1, c2, 1 - factor);
+		n++;
+	}
+	return { vertex_number: n };
+}
+
+/**
+ * Reads a texel at a UV, wrapping the coordinate into 0..1 and flipping v.
+ *
+ * The fractional part is taken as `u - floor(u)` rather than `u % 1` so that
+ * -0.3 wraps to 0.7 instead of -0.3, which is how a repeating texture is meant
+ * to behave on the negative side.
+ */
+function sampleWrapped(image: Image, u: number, v: number): number {
+	const fu = u - Math.floor(u);
+	const fv = v - Math.floor(v);
+	const x = Math.min(image.width - 1, Math.floor(fu * image.width));
+	// Texture space runs up, image rows run down.
+	const y = Math.min(image.height - 1, Math.max(0, Math.floor((1 - fv) * image.height) - 1));
+	return image.pixel(x, y);
+}
+
+/** The one permutation `Perlin color` ever uses. See the call site. */
+const PERLIN_SEED = 1;
 
 const redOf = (c: number): number => c & 0xff;
 const greenOf = (c: number): number => (c >>> 8) & 0xff;

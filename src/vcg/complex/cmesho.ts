@@ -30,6 +30,8 @@ import { MeshElement, maskAnd, maskOr } from "../../common/ml_document/mesh_elem
 import { Box3 } from "../space/box3.ts";
 import {
 	CHANNELS,
+	type ChannelDomain,
+	type CustomAttribute,
 	disableChannels,
 	enableChannels,
 	hasChannels,
@@ -82,6 +84,8 @@ export class CMeshO {
 	faceMark: Int32Array | null = null;
 	faceCurvDir: Float64Array | null = null;
 	wedgeTexCoord: Float64Array | null = null;
+	/** Which entry of {@link textures} each corner's UV addresses. */
+	wedgeTexIndex: Int32Array | null = null;
 	wedgeNormal: Float64Array | null = null;
 	wedgeColor: Uint32Array | null = null;
 
@@ -98,6 +102,20 @@ export class CMeshO {
 	/** VCG's `Tr`: the mesh's own transform, not applied to the coordinates. */
 	transformMatrix: Float64Array = identity4();
 	textures: string[] = [];
+	/**
+	 * VCG's `m.C()`: one colour for the whole mesh, distinct from the per-vertex
+	 * and per-face channels. A viewer falls back to it when neither is present.
+	 */
+	color: Color4b = WHITE;
+	/**
+	 * Attributes a filter added at run time, VCG's `PerVertexAttributeHandle`
+	 * and `PerFaceAttributeHandle`.
+	 *
+	 * A list rather than rows in {@link CHANNELS} because the set is not known
+	 * until a script runs. They still grow, reset and compact with everything
+	 * else: `components.ts` walks this list alongside the table.
+	 */
+	customAttrs: CustomAttribute[] = [];
 	/** Incremented on every structural mutation; caches key off this. */
 	imark = 0;
 	/** Which channels are currently live. Mirrors `MeshModel.dataMask()`. */
@@ -214,6 +232,44 @@ export class CMeshO {
 		disableChannels(this, mask);
 	}
 
+	// ---- custom attributes ----------------------------------------------------------
+	/** The attribute of that name and domain, or undefined. */
+	customAttribute(name: string, domain: ChannelDomain): CustomAttribute | undefined {
+		return this.customAttrs.find((a) => a.name === name && a.domain === domain);
+	}
+
+	/**
+	 * Adds an attribute, or returns the existing one when it already matches.
+	 *
+	 * Re-adding under a different arity throws rather than silently reshaping
+	 * the storage: a scalar and a point attribute of the same name are two
+	 * different things, and every expression already compiled against the old
+	 * one would start reading garbage.
+	 */
+	addCustomAttribute(name: string, domain: ChannelDomain, arity: number): CustomAttribute {
+		const existing = this.customAttribute(name, domain);
+		if (existing !== undefined) {
+			if (existing.arity !== arity) {
+				throw new Error(
+					`the ${domain} attribute "${name}" already exists with ${existing.arity} components, not ${arity}`,
+				);
+			}
+			return existing;
+		}
+		const cap = domain === "vert" ? this.vertCap : this.faceCap;
+		const attr: CustomAttribute = { name, domain, arity, data: new Float64Array(cap * arity) };
+		this.customAttrs.push(attr);
+		return attr;
+	}
+
+	/** Drops the attribute if present; returns whether there was one. */
+	deleteCustomAttribute(name: string, domain: ChannelDomain): boolean {
+		const i = this.customAttrs.findIndex((a) => a.name === name && a.domain === domain);
+		if (i < 0) return false;
+		this.customAttrs.splice(i, 1);
+		return true;
+	}
+
 	// ---- whole-mesh operations -------------------------------------------------------
 	/** Drops all geometry but keeps which optional channels are enabled. */
 	clear(): void {
@@ -228,6 +284,9 @@ export class CMeshO {
 			if (desc.optional && maskAnd(mask, desc.mask) === 0) continue;
 			setChannel(this, desc.key, new desc.ctor(0));
 		}
+		// The attributes survive the way an enabled channel does — the mesh
+		// keeps its shape, it just has no elements left.
+		for (const attr of this.customAttrs) attr.data = new Float64Array(0);
 		this.bbox.setEmpty();
 		this.imark = 0;
 	}

@@ -50,6 +50,7 @@ export type FaceChannelKey =
 	| "faceMark"
 	| "faceCurvDir"
 	| "wedgeTexCoord"
+	| "wedgeTexIndex"
 	| "wedgeNormal"
 	| "wedgeColor"
 	| "ffFace"
@@ -59,6 +60,20 @@ export type FaceChannelKey =
 
 export type ChannelKey = VertChannelKey | FaceChannelKey;
 export type ChannelDomain = "vert" | "face";
+
+/**
+ * A run-time named attribute — VCG's `PerVertexAttributeHandle`.
+ *
+ * Always `Float64Array`: upstream templates the handle on any type, but the
+ * only two MeshLab's own filters ever ask for are a scalar and a `Point3`, and
+ * both are floating point. `arity` tells them apart.
+ */
+export interface CustomAttribute {
+	readonly name: string;
+	readonly domain: ChannelDomain;
+	readonly arity: number;
+	data: Float64Array;
+}
 
 export interface ChannelDesc {
 	readonly key: ChannelKey;
@@ -221,6 +236,16 @@ export const CHANNELS: readonly ChannelDesc[] = [
 		domain: "face",
 		arity: 6,
 		ctor: Float64Array,
+		mask: MM.MM_WEDGTEXCOORD,
+		optional: true,
+	},
+	// VCG stores the texture index inside the tex-coord object (`WT(i).N()`), so
+	// it lives and dies with the coordinates and shares their datamask bit.
+	{
+		key: "wedgeTexIndex",
+		domain: "face",
+		arity: 3,
+		ctor: Int32Array,
 		mask: MM.MM_WEDGTEXCOORD,
 		optional: true,
 	},
@@ -403,6 +428,12 @@ export function growDomain(
 		next.set(old.subarray(0, liveCount * desc.arity) as never);
 		setChannel(m, desc.key, next);
 	}
+	for (const attr of m.customAttrs) {
+		if (attr.domain !== domain) continue;
+		const next = new Float64Array(newCap * attr.arity);
+		next.set(attr.data.subarray(0, liveCount * attr.arity));
+		attr.data = next;
+	}
 	if (domain === "vert") m.vertCap = newCap;
 	else m.faceCap = newCap;
 }
@@ -424,6 +455,10 @@ export function resetDomainRange(m: CMeshO, domain: ChannelDomain, from: number,
 		if (arr === null) continue;
 		arr.fill(desc.fill ?? 0, from * desc.arity, to * desc.arity);
 	}
+	for (const attr of m.customAttrs) {
+		if (attr.domain !== domain) continue;
+		attr.data.fill(0, from * attr.arity, to * attr.arity);
+	}
 }
 
 /**
@@ -434,11 +469,7 @@ export function resetDomainRange(m: CMeshO, domain: ChannelDomain, from: number,
  * higher index.
  */
 export function compactDomain(m: CMeshO, domain: ChannelDomain, remap: Int32Array): void {
-	for (const desc of CHANNELS) {
-		if (desc.domain !== domain) continue;
-		const arr = getChannel(m, desc.key);
-		if (arr === null) continue;
-		const arity = desc.arity;
+	const move = (arr: NumArray, arity: number): void => {
 		for (let oldIdx = 0; oldIdx < remap.length; oldIdx++) {
 			const newIdx = remap[oldIdx];
 			if (newIdx < 0 || newIdx === oldIdx) continue;
@@ -446,5 +477,14 @@ export function compactDomain(m: CMeshO, domain: ChannelDomain, remap: Int32Arra
 			const dst = newIdx * arity;
 			for (let k = 0; k < arity; k++) arr[dst + k] = arr[src + k];
 		}
+	};
+	for (const desc of CHANNELS) {
+		if (desc.domain !== domain) continue;
+		const arr = getChannel(m, desc.key);
+		if (arr === null) continue;
+		move(arr, desc.arity);
+	}
+	for (const attr of m.customAttrs) {
+		if (attr.domain === domain) move(attr.data, attr.arity);
 	}
 }

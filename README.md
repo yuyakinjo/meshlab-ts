@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 211 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 223 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -69,13 +69,16 @@ printable solid, and to go from a raw point cloud to a watertight surface:
   and transfer it between aligned meshes
 - **filter_mls** (8) — APSS and RIMLS moving least squares surfaces: projection, marching-cubes
   iso-surface extraction, curvature colouring, radius-from-density, small-component selection
-- **filter_func** (12) — expression-driven filters: conditional vertex and face selection,
-  per-vertex/face quality, colour, normal and geometric functions, a grid generator, an
+- **filter_func** (18, complete) — expression-driven filters: conditional vertex and face
+  selection, per-vertex/face quality, colour, normal and geometric functions, per-vertex and
+  per-wedge texture coordinates, named custom scalar and point attributes, a grid generator, an
   implicit-surface extractor and user-defined refinement
-- **filter_colorproc** (22) — colour fill, invert, desaturate, levels, brightness/contrast/gamma,
-  thresholding, colourisation, white balance, noise, quality-to-colour ramps, quality clamping,
-  colour and quality transfer between vertices and faces, random and per-component labelling,
-  Laplacian colour smoothing, triangle-shape metrics, discrete curvatures
+- **filter_colorproc** (28, complete) — colour fill, invert, desaturate, levels,
+  brightness/contrast/gamma, thresholding, colourisation, white balance, noise, histogram
+  equalisation, Perlin colouring, per-layer scattering, quality-to-colour ramps, quality clamping
+  and saturation, colour and quality transfer between vertices, faces, the mesh and its texture,
+  random and per-component labelling, Laplacian colour smoothing, triangle-shape metrics,
+  discrete curvatures
 - **filter_create** (13) — the platonic solids, box, sphere, sphere cap, cone/cylinder, torus,
   annulus, spherical point clouds, and a plane fitted to a selection
 
@@ -83,7 +86,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 71 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 59 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -261,6 +264,21 @@ of truth for filter names and parameter defaults. No code is copied from it.
 - **Rasters carry a camera, not an image.** A `RasterModel` is a `Shot` plus the path to its
   photograph; nothing decodes pixels. What is parsed is the PNG or JPEG header, because Bundler
   stores no image size and expects the reader to recover the viewport from the image itself.
+- **Custom attributes are a list beside the channel table, not a map on the side.** A filter can
+  name a new per-vertex or per-face attribute at run time, so it cannot be a row in the static
+  channel table. It still has to grow, reset and compact exactly as a built-in channel does — an
+  attribute that stopped travelling with its vertex through a compaction would be far worse than
+  one that never existed. So the three generic passes in `components.ts` walk the attribute list
+  right after the table, and nothing else in the codebase knows the difference.
+- **Histogram equalisation reproduces upstream's off-by-one baseline.** VCGLib subtracts `cdf[0]`
+  — how many vertices are *exactly* zero — where the textbook subtracts the smallest cdf value
+  actually present. The visible consequences are that the darkest colour does not come out black
+  and that a uniformly coloured mesh equalises to white. Both are wrong in the abstract and right
+  for MeshLab, and matching them keeps a `.mlx` doing what it did before.
+- **Quality saturation restarts at every component.** Upstream seeds its traversal at vertex 0
+  alone, so on a mesh with islands every component but the first comes back unsaturated. Since
+  the filter's whole contract is a bound on the gradient *everywhere*, that is a bug rather than
+  a convention, and this reseeds at each unvisited vertex.
 - **The expression dialect is muParser's, not JavaScript's.** `filter_func` hands user formulas
   to muParser upstream, so `^` is exponentiation and right-associative, a unary sign binds
   tighter than `+`/`-` but looser than `^` (`-2^2` is -4, `-2*3` is -6), `log` is the natural
