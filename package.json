@@ -1,6 +1,6 @@
 {
 	"name": "meshlab-ts",
-	"version": "2026.8.0",
+	"version": "2026.8.1",
 	"description": "An unofficial from-scratch TypeScript/Bun port of MeshLab: 269 of its 282 filters behind the same FilterPlugin/MeshDocument architecture, differentially tested against real PyMeshLab",
 	"license": "GPL-3.0-or-later",
 	"type": "module",
