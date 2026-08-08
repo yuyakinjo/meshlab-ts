@@ -100,9 +100,25 @@ and `SparseMatrix.pin` turned out to be unusable twice on one matrix, which is
 exactly what a two-coordinate solve needs — `pinMulti` now does both at once,
 and the old failure mode was silent.
 
-**Stage B — the structure.** `chart_graph.ts`, `seams.ts`, `shell.ts`. Testable by
-combinatorics: chart count against connected components of the UV-cut mesh, seam
-endpoints against vertices of seam-valence ≠ 2, `Σ chart faces = mesh faces`.
+**Stage B — the structure. Done.** `parametrization/chart_graph.ts`,
+`parametrization/seams.ts`, `parametrization/shell.ts`, with 29 tests. The
+structure that made it tractable: the atlas mesh carries **both** adjacency
+relations — the surface's and the texture's — and a seam is exactly an edge
+where they disagree. Charts are then components under UV adjacency and the seam
+network needs no separate bookkeeping.
+
+Held to exact combinatorics: `Σ chart faces = mesh faces`, every seam edge in
+exactly one seam, consecutive edges of a seam sharing a node, a shell being its
+chart plus its filler. The test that actually pins down the seam *pairing* is
+not combinatorial — a grid split into two charts by a known UV translation must
+give a seam whose two sides, fed to Stage A's rigid fit, recover that
+translation exactly. A reversed or off-by-one pairing still produces a seam of
+the right length with the right endpoints, so nothing else would catch it.
+
+One trap found: filling "every boundary but the longest" by capping hole size
+just below the longest loop fills *nothing* on an annulus, where both
+boundaries are the same length — and leaves the shell silently a non-disk. The
+loops are selected explicitly instead.
 
 **Stage C — the driver.** `greedy.ts`. The stage with no exact oracle. Tested by
 monotone properties instead: total UV border length strictly decreases, chart
