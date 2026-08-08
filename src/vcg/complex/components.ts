@@ -58,8 +58,10 @@ export type FaceChannelKey =
 	| "vfNextFace"
 	| "vfNextIndex";
 
-export type ChannelKey = VertChannelKey | FaceChannelKey;
-export type ChannelDomain = "vert" | "face";
+export type EdgeChannelKey = "edgeVert" | "edgeFlags";
+
+export type ChannelKey = VertChannelKey | FaceChannelKey | EdgeChannelKey;
+export type ChannelDomain = "vert" | "face" | "edge";
 
 /**
  * A run-time named attribute — VCG's `PerVertexAttributeHandle`.
@@ -288,6 +290,30 @@ export const CHANNELS: readonly ChannelDesc[] = [
 		mask: MM.MM_FACEFACETOPO,
 		optional: true,
 	},
+	// ---- edge, always present ------------------------------------------------
+	// An edge mesh carries only these two; a polyline has no normals, no
+	// quality and no adjacency to speak of.
+	//
+	// Mask 0, because MeshLab's `MM_*` enum has no edge bits at all — edges are
+	// not something a filter declares a requirement on, they are simply there.
+	// The table already treats 0 as "always present, governed by nothing".
+	{
+		key: "edgeVert",
+		domain: "edge",
+		arity: 2,
+		ctor: Int32Array,
+		mask: 0,
+		fill: -1,
+		optional: false,
+	},
+	{
+		key: "edgeFlags",
+		domain: "edge",
+		arity: 1,
+		ctor: Uint32Array,
+		mask: 0,
+		optional: false,
+	},
 	// VF: an intrusive singly-linked list threading every face corner that
 	// touches a vertex, exactly VCG's VFp/VFi chain. -1 terminates.
 	{
@@ -435,7 +461,8 @@ export function growDomain(
 		attr.data = next;
 	}
 	if (domain === "vert") m.vertCap = newCap;
-	else m.faceCap = newCap;
+	else if (domain === "face") m.faceCap = newCap;
+	else m.edgeCap = newCap;
 }
 
 /**

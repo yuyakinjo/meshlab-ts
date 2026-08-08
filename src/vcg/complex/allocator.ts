@@ -73,6 +73,42 @@ export function addFaces(m: CMeshO, n: number): number {
 	return first;
 }
 
+/**
+ * Appends `n` edges and returns the index of the first.
+ *
+ * Edges have no adjacency and no optional channels, so this is the whole of
+ * their allocation — the generic domain machinery does the rest.
+ */
+export function addEdges(m: CMeshO, n: number): number {
+	if (n < 0) throw new MLInternalException(`addEdges(${n}): negative count`);
+	const first = m.edgeSize;
+	if (n === 0) return first;
+
+	const needed = first + n;
+	if (needed > m.edgeCap) growDomain(m, "edge", nextCapacity(m.edgeCap, needed), m.edgeSize);
+	resetDomainRange(m, "edge", first, needed);
+
+	m.edgeSize = needed;
+	m.en += n;
+	m.imark++;
+	return first;
+}
+
+/** Appends one edge on the given vertex indices and returns its index. */
+export function addEdge(m: CMeshO, v0: number, v1: number): number {
+	const e = addEdges(m, 1);
+	m.setEdge(e, v0, v1);
+	return e;
+}
+
+/** Marks an edge deleted without moving anything. */
+export function deleteEdge(m: CMeshO, e: number): void {
+	if (m.isEdgeD(e)) return;
+	m.edgeFlags[e] |= VertexFlag.DELETED;
+	m.en--;
+	m.imark++;
+}
+
 /** Appends one vertex at `(x, y, z)` and returns its index. */
 export function addVertex(m: CMeshO, x: number, y: number, z: number): number {
 	const v = addVertices(m, 1);
@@ -197,6 +233,34 @@ export function compactVertexVector(m: CMeshO): Int32Array {
 		}
 	}
 
+	// Edges reference vertices too, and a polyline is nothing but edges — a
+	// compaction that renumbered only the faces would leave every edge pointing
+	// at whatever moved into its old slot.
+	const evArr = m.edgeVert;
+	for (let e = 0; e < m.edgeSize; e++) {
+		if (m.isEdgeD(e)) continue;
+		for (let k = 0; k < 2; k++) {
+			const old = evArr[2 * e + k];
+			const next = remap[old];
+			if (next < 0) {
+				throw new MLInternalException(
+					`compactVertexVector: live edge ${e} references deleted vertex ${old}`,
+				);
+			}
+			evArr[2 * e + k] = next;
+		}
+	}
+
+	m.imark++;
+	return remap;
+}
+
+/** Removes deleted edges and returns the old→new remap (-1 where deleted). */
+export function compactEdgeVector(m: CMeshO): Int32Array {
+	const remap = buildRemap(m.edgeSize, (e) => m.isEdgeD(e));
+	if (isIdentity(remap)) return remap;
+	compactDomain(m, "edge", remap);
+	m.edgeSize = m.en;
 	m.imark++;
 	return remap;
 }
@@ -222,6 +286,7 @@ export function compactEveryVector(m: CMeshO): {
 	faceRemap: Int32Array;
 } {
 	const faceRemap = compactFaceVector(m);
+	compactEdgeVector(m);
 	const vertRemap = compactVertexVector(m);
 	return { vertRemap, faceRemap };
 }
@@ -251,13 +316,17 @@ export function undeleteEverything(m: CMeshO): void {
 export const Allocator = {
 	addVertices,
 	addFaces,
+	addEdges,
 	addVertex,
 	addFace,
+	addEdge,
 	addMeshData,
 	deleteVertex,
 	deleteFace,
+	deleteEdge,
 	compactVertexVector,
 	compactFaceVector,
+	compactEdgeVector,
 	compactEveryVector,
 	undeleteEverything,
 } as const;

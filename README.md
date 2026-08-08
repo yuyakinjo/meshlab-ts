@@ -10,19 +10,20 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 254 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 258 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
 - **filter_clean** (15, complete) — welding, degenerate and duplicate removal, isolated pieces,
   non-manifold edge and vertex repair, T-vertices, removal by quality, wedge-UV merging,
   mismatched-border snapping, and ball-pivoting surface reconstruction
-- **filter_meshing** (25 of 37) — re-orientation, hole closing, QEM decimation, the transform
+- **filter_meshing** (29 of 37) — re-orientation, hole closing, QEM decimation, the transform
   family (scale, centre, rotate, freeze, reset, explicit matrix, translation/rotation/scale,
   inversion, axis flip and swap, principal-axis alignment, rotate-to-fit-a-plane), point-cloud
   normal estimation and smoothing, Loop/Butterfly/midpoint subdivision, isotropic explicit
   remeshing, clustering decimation, principal curvature directions, crease-edge selection,
-  polygon-to-triangle conversion
+  polygon-to-triangle conversion, planar sections, selection perimeters, crease polylines and
+  cylindrical unwrapping
 - **filter_select** (24, complete) — selection and deletion, dilation and erosion, selection by
   vertex/face quality, by colour in RGB or HSV, by view angle, by edge length, by connectivity,
   by triangle shape and fold, by local outlier probability, by self-intersection, and by
@@ -98,7 +99,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 28 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 24 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -212,6 +213,13 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **Edges are a real container, not degenerate triangles.** A polyline has vertices and edges and
+  no faces, and three filters produce exactly that, so `CMeshO` grew an edge domain alongside the
+  vertex and face ones. It costs nothing on an ordinary mesh — the arrays are empty — and it
+  travels through the same generic grow/reset/compact passes everything else does. The catch,
+  found immediately by a test, is that *anything which renumbers vertices must renumber the edges
+  pointing at them*: both `compactVertexVector` and `removeDuplicateVertex` had to learn about
+  them, and welding a polyline is precisely the operation that would otherwise break.
 - **`Align to Principal Axis` orders its axes oppositely in its two modes.** Both take the
   eigenvalues ascending, but a covariance eigenvalue grows with the spread along its axis while a
   moment of inertia shrinks with it — so the point mode puts the longest axis on Z and the

@@ -30,7 +30,7 @@ import type { CallBackPos } from "../../common/utilities/callback.ts";
 import { MLException, MLNotImplementedException } from "../../common/utilities/ml_exception.ts";
 import { Allocator } from "../../vcg/complex/allocator.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
-import type { CMeshO } from "../../vcg/complex/cmesho.ts";
+import { CMeshO } from "../../vcg/complex/cmesho.ts";
 import { CreaseCut } from "../../vcg/complex/crease_cut.ts";
 import { UpdateCurvature as Curvature } from "../../vcg/complex/curvature.ts";
 import { FaceFlag, VertexFlag } from "../../vcg/complex/flags.ts";
@@ -42,6 +42,7 @@ import {
 	quadricSimplification,
 } from "../../vcg/complex/local_optimization/tri_edge_collapse_quadric.ts";
 import { estimateNormals } from "../../vcg/complex/pointcloud_normal.ts";
+import { Polyline } from "../../vcg/complex/polyline.ts";
 import { Refine } from "../../vcg/complex/refine.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdatePosition } from "../../vcg/complex/update/position.ts";
@@ -76,6 +77,10 @@ export const FP = {
 	FP_ROTATE_FIT: 22,
 	FP_FAUX_CREASE: 23,
 	FP_MAKE_PURE_TRI: 24,
+	FP_FAUX_EXTRACT: 25,
+	FP_PERIMETER_POLYLINE: 26,
+	FP_SLICE_WITH_A_PLANE: 27,
+	FP_CYLINDER_UNWRAP: 28,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -308,6 +313,41 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		info: "Convert into a tri-mesh by splitting any polygonal face.",
 		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
 		requirements: MeshElement.MM_NONE,
+	},
+	[FP.FP_FAUX_EXTRACT]: {
+		name: "Build a Polyline from Selected Edges",
+		pythonName: "generate_polyline_from_selected_edges",
+		info:
+			"Create a new Layer with an edge mesh composed only by the selected edges of the current " +
+			"mesh. Useful for displaying an important set of edges (e.g. the border flag ones) and " +
+			"for using the resulting polyline in other filters.",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_PERIMETER_POLYLINE]: {
+		name: "Create Selection Perimeter Polyline",
+		pythonName: "generate_polyline_from_selection_perimeter",
+		info:
+			"Create a new Layer with an edge mesh composed by the perimeter of the current face " +
+			"selection.",
+		filterClass: FilterClass.Measure,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_SLICE_WITH_A_PLANE]: {
+		name: "Compute Planar Section",
+		pythonName: "generate_polyline_from_planar_section",
+		info: "Compute the polyline representing a planar section (a slice) of a mesh.",
+		filterClass: FilterClass.Measure,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_CYLINDER_UNWRAP]: {
+		name: "Geometric Cylindrical Unwrapping",
+		pythonName: "generate_cylindrical_unwrapping",
+		info:
+			"Unwrap the geometry of current mesh along a clylindrical equatorial projection. The " +
+			"cylindrical projection axis is centered on the origin and directed along the Y axis.",
+		filterClass: FilterClass.Measure,
+		requirements: MeshElement.MM_FACEFACETOPO,
 	},
 };
 
@@ -1054,6 +1094,61 @@ export class FilterMeshing extends FilterPlugin {
 				);
 				break;
 
+			case FP.FP_SLICE_WITH_A_PLANE:
+				list.add(
+					new RichEnum("planeAxis", 0, ["X Axis", "Y Axis", "Z Axis", "Custom Axis"], {
+						description: "Plane perpendicular to",
+						tooltip: "The Slicing plane will be done perpendicular to the axis",
+					}),
+				);
+				list.add(
+					new RichDirection("customAxis", [0, 1, 0], {
+						description: "Custom axis",
+						tooltip:
+							"Specify a custom axis, this is only valid if the above parameter is set to Custom",
+					}),
+				);
+				list.add(
+					new RichFloat("planeOffset", 0, {
+						description: "Cross plane offset",
+						tooltip:
+							"Specify an offset of the cross-plane. The offset corresponds to the distance from " +
+							"the point specified in the plane reference parameter.",
+					}),
+				);
+				list.add(
+					new RichEnum("relativeTo", 2, ["Bounding box center", "Bounding box min", "Origin"], {
+						description: "plane reference",
+						tooltip: "Specify the reference from which the planes are shifted",
+					}),
+				);
+				break;
+
+			case FP.FP_CYLINDER_UNWRAP:
+				list.add(
+					new RichFloat("startAngle", 0, {
+						description: "Start angle (deg)",
+						tooltip: "The starting angle of the unrolling process.",
+					}),
+				);
+				list.add(
+					new RichFloat("endAngle", 360, {
+						description: "End angle (deg)",
+						tooltip:
+							"The ending angle of the unrolling process. Quality threshold for penalizing bad shaped faces.",
+					}),
+				);
+				list.add(
+					new RichFloat("radius", 0, {
+						description: "Projection Radius",
+						tooltip:
+							"If non zero, this parameter specifies the desired radius of the reference cylinder " +
+							"used for the projection. Changing this value affect the aspect ratio of the unwrapped " +
+							"mesh. If zero the average distance of the mesh from the axis is chosen.",
+					}),
+				);
+				break;
+
 			default:
 				break;
 		}
@@ -1504,6 +1599,86 @@ export class FilterMeshing extends FilterPlugin {
 				return { face_number: cm.fn };
 			}
 
+			case FP.FP_FAUX_EXTRACT:
+			case FP.FP_PERIMETER_POLYLINE: {
+				UpdateTopology.faceFace(cm);
+				if (id === FP.FP_PERIMETER_POLYLINE && countSelectedFaces(cm) === 0) {
+					throw new MLException("There is no face selection to take the perimeter of.");
+				}
+				const line =
+					id === FP.FP_PERIMETER_POLYLINE
+						? Polyline.selectionPerimeter(cm)
+						: Polyline.polylineFromFaceEdgeSelection(cm);
+				// The extractor emits each segment with its own two vertices, so
+				// the polyline is a heap of disconnected sticks until the shared
+				// endpoints are welded.
+				Clean.removeDuplicateVertex(line);
+				Allocator.compactEveryVector(line);
+				const label = id === FP.FP_PERIMETER_POLYLINE ? "perimeter" : "EdgeMesh";
+				const target = doc.addNewMesh("", `${m.label()}_${label}`, true, line);
+				target.updateBoxAndNormals();
+				doc.Log.log(`Built a polyline of ${line.en} edges over ${line.vn} vertices`);
+				post.mask = MeshElement.MM_NONE;
+				return { new_mesh_id: target.id(), edge_number: line.en, vertex_number: line.vn };
+			}
+
+			case FP.FP_SLICE_WITH_A_PLANE: {
+				const axisIndex = params.getEnum("planeAxis");
+				const axis =
+					axisIndex >= 0 && axisIndex < 3
+						? [0, 1, 2].map((k) => (k === axisIndex ? 1 : 0))
+						: [...params.getPoint3m("customAxis")];
+				const len = Math.hypot(axis[0], axis[1], axis[2]);
+				if (len === 0) throw new MLException("The slicing axis cannot be the zero vector.");
+				for (let k = 0; k < 3; k++) axis[k] /= len;
+
+				UpdateBounding.box(cm);
+				const box = cm.bbox;
+				const half = (box.diagonal || 1) / 2;
+				const shift = params.getFloat("planeOffset");
+				// The offset is measured from whichever reference was chosen, and
+				// is in units of half the diagonal for the two box-relative ones.
+				const origin = [0, 1, 2].map((k) => {
+					switch (params.getEnum("relativeTo")) {
+						case 0:
+							return (box.min[k] + box.max[k]) / 2 + axis[k] * shift * half;
+						case 1:
+							return box.min[k] + axis[k] * shift * half;
+						default:
+							return axis[k] * shift;
+					}
+				});
+				const offset = axis[0] * origin[0] + axis[1] * origin[1] + axis[2] * origin[2];
+
+				const line = Polyline.planarSection(cm, axis, offset);
+				Clean.removeDuplicateVertex(line);
+				Allocator.compactEveryVector(line);
+				const suffix = ["X", "Y", "Z", "custom"][Math.min(3, Math.max(0, axisIndex))];
+				const target = doc.addNewMesh("", `${m.label()}_sect_${suffix}_${shift}`, true, line);
+				target.updateBoxAndNormals();
+				doc.Log.log(`The section has ${line.en} edges over ${line.vn} vertices`);
+				post.mask = MeshElement.MM_NONE;
+				return { new_mesh_id: target.id(), edge_number: line.en, vertex_number: line.vn };
+			}
+
+			case FP.FP_CYLINDER_UNWRAP: {
+				const unrolled = cylindricalUnwrap(
+					cm,
+					params.getFloat("startAngle"),
+					params.getFloat("endAngle"),
+					params.getFloat("radius"),
+				);
+				const target = doc.addNewMesh("", "Unrolled Mesh", true, unrolled);
+				target.updateBoxAndNormals();
+				doc.Log.log(`Unrolled into ${unrolled.vn} vertices and ${unrolled.fn} faces`);
+				post.mask = MeshElement.MM_NONE;
+				return {
+					new_mesh_id: target.id(),
+					vertex_number: unrolled.vn,
+					face_number: unrolled.fn,
+				};
+			}
+
 			default:
 				return this.wrongActionCalled(id);
 		}
@@ -1873,3 +2048,78 @@ const cross3 = (a: readonly number[], b: readonly number[]): number[] => [
 	a[2] * b[0] - a[0] * b[2],
 	a[0] * b[1] - a[1] * b[0],
 ];
+
+/**
+ * Unrolls the mesh onto the cylinder about the Y axis.
+ *
+ * Each vertex becomes `(-θ · r̄, y, ρ)`: the angle around the axis becomes x,
+ * the height stays y, and the distance from the axis becomes z. So a cylinder
+ * flattens into a plane and any bulge from it stands up as relief — which is
+ * what makes this useful for reading an inscription off a column or a vase.
+ *
+ * A vertex is duplicated once per full turn the requested range covers, so a
+ * range wider than 360 degrees produces a mesh that repeats. Faces are kept
+ * only where all three corners landed in the same turn: a face straddling the
+ * seam would otherwise be stretched right across the unrolled sheet.
+ */
+function cylindricalUnwrap(
+	m: CMeshO,
+	startAngleDeg: number,
+	endAngleDeg: number,
+	radius: number,
+): CMeshO {
+	const out = new CMeshO();
+	if (m.vn === 0) return out;
+	const loops = Math.max(1, Math.floor(1 + (endAngleDeg - startAngleDeg) / 360));
+	// Per loop, where each source vertex ended up, or -1.
+	const ref: Int32Array[] = [];
+	for (let i = 0; i < loops; i++) ref.push(new Int32Array(m.vertSize).fill(-1));
+
+	let sumRho = 0;
+	let made = 0;
+	for (let v = 0; v < m.vertSize; v++) {
+		if (m.isVertD(v)) continue;
+		const x = m.vx(v);
+		const z = m.vz(v);
+		const rho = Math.hypot(x, z);
+		// atan2(z, x) so that the projection axis is Y, matching upstream's
+		// `p.Y() = 0; p.ToPolarRad(...)`.
+		let thetaDeg = (Math.atan2(z, x) * 180) / Math.PI;
+		for (let loop = 0; loop < loops && thetaDeg < endAngleDeg; loop++, thetaDeg += 360) {
+			if (thetaDeg < startAngleDeg) continue;
+			const nv = Allocator.addVertices(out, 1);
+			out.setVert(nv, -(thetaDeg * Math.PI) / 180, m.vy(v), rho);
+			out.vertColor[nv] = m.vertColor[v];
+			out.vertQuality[nv] = m.vertQuality[v];
+			ref[loop][v] = nv;
+			sumRho += rho;
+			made++;
+		}
+	}
+	if (made === 0) return out;
+
+	// x is an angle so far; scaling it by the mean radius turns it back into a
+	// length, so the unrolled sheet has the aspect ratio of the real surface.
+	const scale = radius !== 0 ? radius : sumRho / made;
+	for (let v = 0; v < out.vertSize; v++) {
+		out.setVert(v, out.vx(v) * scale, out.vy(v), out.vz(v));
+	}
+
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let loop = 0; loop < loops; loop++) {
+			const v = [0, 1, 2].map((k) => ref[loop][m.fv(f, k)]);
+			if (v.some((i) => i < 0)) continue;
+			const nf = Allocator.addFaces(out, 1);
+			out.setFace(nf, v[0], v[1], v[2]);
+		}
+	}
+	return out;
+}
+
+/** How many faces carry the selection bit. */
+function countSelectedFaces(cm: CMeshO): number {
+	let n = 0;
+	for (let f = 0; f < cm.faceSize; f++) if (!cm.isFaceD(f) && cm.isFaceS(f)) n++;
+	return n;
+}

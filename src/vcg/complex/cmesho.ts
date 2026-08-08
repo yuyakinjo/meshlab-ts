@@ -54,11 +54,24 @@ export class CMeshO {
 	vn = 0;
 	/** Live (non-deleted) face count. VCG's `fn`. */
 	fn = 0;
+	/**
+	 * Allocated edge slots. VCG's `edge.size()`.
+	 *
+	 * An edge mesh is a first-class thing in VCGLib, not a degenerate triangle
+	 * mesh: a polyline has edges and no faces, and several filters produce
+	 * exactly that. The container is empty on an ordinary mesh and costs
+	 * nothing there.
+	 */
+	edgeSize = 0;
+	/** Live (non-deleted) edge count. VCG's `en`. */
+	en = 0;
 
 	/** Capacity of the vertex-domain channel arrays, in elements. */
 	vertCap = 0;
 	/** Capacity of the face-domain channel arrays, in elements. */
 	faceCap = 0;
+	/** Capacity of the edge-domain channel arrays, in elements. */
+	edgeCap = 0;
 
 	// ---- vertex channels, always present -----------------------------------
 	vertCoord: Float64Array = new Float64Array(0);
@@ -88,6 +101,11 @@ export class CMeshO {
 	wedgeTexIndex: Int32Array | null = null;
 	wedgeNormal: Float64Array | null = null;
 	wedgeColor: Uint32Array | null = null;
+
+	// ---- edge channels ----------------------------------------------------------
+	/** Two vertex indices per edge. */
+	edgeVert: Int32Array = new Int32Array(0);
+	edgeFlags: Uint32Array = new Uint32Array(0);
 
 	// ---- adjacency -----------------------------------------------------------
 	ffFace: Int32Array | null = null;
@@ -166,6 +184,24 @@ export class CMeshO {
 	}
 	isVertV(v: number): boolean {
 		return (this.vertFlags[v] & VertexFlag.VISITED) !== 0;
+	}
+
+	// ---- edge accessors ----------------------------------------------------------
+	/** Vertex index at end `k` (0 or 1) of edge `e`. */
+	ev(e: number, k: number): number {
+		return this.edgeVert[2 * e + k];
+	}
+
+	setEdge(e: number, v0: number, v1: number): void {
+		this.edgeVert[2 * e] = v0;
+		this.edgeVert[2 * e + 1] = v1;
+	}
+
+	isEdgeD(e: number): boolean {
+		return (this.edgeFlags[e] & VertexFlag.DELETED) !== 0;
+	}
+	isEdgeS(e: number): boolean {
+		return (this.edgeFlags[e] & VertexFlag.SELECTED) !== 0;
 	}
 
 	// ---- face accessors --------------------------------------------------------
@@ -256,7 +292,7 @@ export class CMeshO {
 			}
 			return existing;
 		}
-		const cap = domain === "vert" ? this.vertCap : this.faceCap;
+		const cap = domain === "vert" ? this.vertCap : domain === "face" ? this.faceCap : this.edgeCap;
 		const attr: CustomAttribute = { name, domain, arity, data: new Float64Array(cap * arity) };
 		this.customAttrs.push(attr);
 		return attr;
@@ -276,10 +312,13 @@ export class CMeshO {
 		const mask = this.currentDataMask;
 		this.vertSize = 0;
 		this.faceSize = 0;
+		this.edgeSize = 0;
 		this.vn = 0;
 		this.fn = 0;
+		this.en = 0;
 		this.vertCap = 0;
 		this.faceCap = 0;
+		this.edgeCap = 0;
 		for (const desc of CHANNELS) {
 			if (desc.optional && maskAnd(mask, desc.mask) === 0) continue;
 			setChannel(this, desc.key, new desc.ctor(0));
@@ -293,7 +332,7 @@ export class CMeshO {
 
 	/** True when no slot is deleted, i.e. indices are dense. */
 	get isCompact(): boolean {
-		return this.vertSize === this.vn && this.faceSize === this.fn;
+		return this.vertSize === this.vn && this.faceSize === this.fn && this.edgeSize === this.en;
 	}
 }
 

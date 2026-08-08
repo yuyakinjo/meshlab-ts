@@ -454,6 +454,20 @@ export function removeDuplicateVertex(m: CMeshO, removeDegenerateFlag = true): n
 			if (survivor >= 0) m.faceVert[3 * f + k] = survivor;
 		}
 	}
+	// Edges reference vertices as well, and welding a polyline is exactly what
+	// turns a heap of disconnected segments into one. Leaving them unremapped
+	// would point every edge at a vertex that had just been deleted.
+	for (let e = 0; e < m.edgeSize; e++) {
+		if (m.isEdgeD(e)) continue;
+		for (let k = 0; k < 2; k++) {
+			const survivor = remap[m.edgeVert[2 * e + k]];
+			if (survivor >= 0) m.edgeVert[2 * e + k] = survivor;
+		}
+	}
+	// A segment whose two ends welded together has no length left.
+	for (let e = 0; e < m.edgeSize; e++) {
+		if (!m.isEdgeD(e) && m.ev(e, 0) === m.ev(e, 1)) Allocator.deleteEdge(m, e);
+	}
 
 	if (removeDegenerateFlag) removeDegenerateFace(m);
 	m.imark++;

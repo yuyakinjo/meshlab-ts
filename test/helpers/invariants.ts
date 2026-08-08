@@ -344,7 +344,7 @@ export function assertAllocatorConsistent(m: CMeshO, label = "mesh"): void {
 			expect(desc.optional, `${label}: mandatory channel ${desc.key} is missing`).toBe(true);
 			continue;
 		}
-		const cap = desc.domain === "vert" ? m.vertCap : m.faceCap;
+		const cap = desc.domain === "vert" ? m.vertCap : desc.domain === "face" ? m.faceCap : m.edgeCap;
 		expect(arr.length, `${label}: channel ${desc.key} length`).toBe(cap * desc.arity);
 	}
 
