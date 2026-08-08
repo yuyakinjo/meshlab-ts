@@ -121,6 +121,8 @@ describe("isotropic remeshing", () => {
 		expect(signedVolume(out)).toBeLessThan(CYLINDER_VOLUME * 1.03);
 	});
 
+	// 30s: convergence over several full remeshing passes has run past the 5s
+	// default on the CI runner before.
 	test("converges instead of running away", () => {
 		// Split and collapse must not undo each other. They did until the
 		// collapse learned to refuse anything that would leave an over-long
@@ -130,7 +132,7 @@ describe("isotropic remeshing", () => {
 			// Growth from one setting to the next has to be modest, not fourfold.
 			expect(counts[i], `at ${[4, 6, 8, 10][i]} iterations`).toBeLessThan(counts[i - 1] * 1.5);
 		}
-	});
+	}, 30000);
 
 	test("evens out an anisotropic mesh", () => {
 		const before = spread(edgeLengths(cylinder()));

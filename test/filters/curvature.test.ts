@@ -236,6 +236,14 @@ describe("the curvature tensor", () => {
 		["quadric fitting", principalDirectionsFitting],
 	] as const) {
 		test(`${name} gives both principal curvatures as 1/R on a sphere`, () => {
+			// A sphere is the degenerate case for this test: k1 and k2 are equal,
+			// so how the eigensolver splits the pair is pure noise — k1 lands a
+			// little above 1/R, k2 the same amount below, and the size of that
+			// split varies with the platform's libm (macOS measures the k1 mean
+			// at 1.004, Linux at 1.010, for the identical mesh). The invariant
+			// that does not depend on the split is their mean: it is the mean
+			// curvature, and the noise cancels out of it. So the mean is held
+			// tight and each curvature only to a band wider than the split.
 			for (const radius of [1, 2]) {
 				const { cm } = withCurvDir(sphere(radius));
 				compute(cm);
@@ -246,8 +254,11 @@ describe("the curvature tensor", () => {
 					k1Sum += p.k1;
 					k2Sum += p.k2;
 				}
-				expect(k1Sum / cm.vn, `${name} k1 at r=${radius}`).toBeCloseTo(1 / radius, 2);
-				expect(k2Sum / cm.vn, `${name} k2 at r=${radius}`).toBeCloseTo(1 / radius, 2);
+				const k1 = k1Sum / cm.vn;
+				const k2 = k2Sum / cm.vn;
+				expect(((k1 + k2) / 2) * radius, `${name} H at r=${radius}`).toBeCloseTo(1, 2);
+				expect(Math.abs(k1 * radius - 1), `${name} k1 at r=${radius}`).toBeLessThan(0.03);
+				expect(Math.abs(k2 * radius - 1), `${name} k2 at r=${radius}`).toBeLessThan(0.03);
 			}
 		});
 

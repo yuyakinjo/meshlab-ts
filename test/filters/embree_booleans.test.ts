@@ -328,6 +328,8 @@ describe("Mesh booleans", () => {
 		).toThrow(/do not overlap/);
 	});
 
+	// 30s: two spheres through a fine boolean grid take ~6s on the CI runner,
+	// which is past the 5s default — the time is the resolution, not a hang.
 	test("a sphere cut from a bigger sphere leaves a shell", () => {
 		const outer = sphereIcosa(3).mesh;
 		const inner = sphereIcosa(3).mesh;
@@ -350,7 +352,7 @@ describe("Mesh booleans", () => {
 		// 4/3 pi (1 - 0.6^3) is about 3.28.
 		expect(volumeOf(result)).toBeGreaterThan(2.6);
 		expect(volumeOf(result)).toBeLessThan(3.6);
-	});
+	}, 30000);
 
 	test("the same layer twice is refused", () => {
 		const { doc, first } = pair(boxAt(1, [0, 0, 0]), boxAt(1, [1, 0, 0]));
