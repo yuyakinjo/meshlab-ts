@@ -17,6 +17,8 @@ import { createStubPlugins } from "../meshlabplugins/_stub/stub_plugins.ts";
 import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
 import { FilterColorProc } from "../meshlabplugins/filter_colorproc/filter_colorproc.ts";
 import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
+import { FilterCreateIso } from "../meshlabplugins/filter_createiso/filter_createiso.ts";
+import { FilterFractal } from "../meshlabplugins/filter_fractal/filter_fractal.ts";
 import { FilterFunc } from "../meshlabplugins/filter_func/filter_func.ts";
 import { FilterGeodesic } from "../meshlabplugins/filter_geodesic/filter_geodesic.ts";
 import { FilterIsoParametrization } from "../meshlabplugins/filter_isoparametrization/filter_isoparametrization.ts";
@@ -33,6 +35,7 @@ import { FilterSelect } from "../meshlabplugins/filter_select/filter_select.ts";
 import { FilterTexture } from "../meshlabplugins/filter_texture/filter_texture.ts";
 import { FilterTriOptimize } from "../meshlabplugins/filter_trioptimize/filter_trioptimize.ts";
 import { FilterUnsharp } from "../meshlabplugins/filter_unsharp/filter_unsharp.ts";
+import { FilterVoronoi } from "../meshlabplugins/filter_voronoi/filter_voronoi.ts";
 import { BaseMeshIOPlugin } from "../meshlabplugins/io_base/io_base.ts";
 import type { MeshDocument } from "./ml_document/mesh_document.ts";
 import type { MeshModel } from "./ml_document/mesh_model.ts";
@@ -57,6 +60,9 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterTexture(),
 	() => new FilterIsoParametrization(),
 	() => new FilterGeodesic(),
+	() => new FilterFractal(),
+	() => new FilterCreateIso(),
+	() => new FilterVoronoi(),
 	() => new FilterTriOptimize(),
 	() => new FilterParametrization(),
 	() => new FilterQuality(),

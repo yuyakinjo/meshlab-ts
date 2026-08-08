@@ -249,6 +249,14 @@ export { type CompiledExpression, compileExpression, Expression } from "./vcg/ma
 export { GenNormal, type SpherePoint } from "./vcg/math/gen_normal.ts";
 export { Distribution, Histogram } from "./vcg/math/histogram.ts";
 export { type Matrix44, Matrix44Ops } from "./vcg/math/matrix44.ts";
+export {
+	FRACTAL_DEFAULTS,
+	FractalAlgorithm,
+	FractalField,
+	type FractalOptions,
+	mulberry32,
+	PerlinNoise,
+} from "./vcg/math/noise.ts";
 export { Camera, Extrinsics, Shot } from "./vcg/math/shot.ts";
 export { type SolveResult, SparseMatrix, solveCG } from "./vcg/math/sparse.ts";
 export { Point3 } from "./vcg/math/vec3.ts";

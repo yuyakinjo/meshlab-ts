@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 172 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 180 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -37,6 +37,11 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_texture** (8 of 9) — per-vertex/per-wedge UV conversion with seam splitting, flat-plane
   and trivial per-triangle parametrisation, texture assignment, and baking vertex colour, normals,
   quality or another mesh's texture into a texture map
+- **filter_voronoi** (4) — geodesic Voronoi sampling with Lloyd relaxation, volumetric sampling,
+  Voronoi scaffolding and solid wireframes
+- **filter_fractal** (3) — fractal terrain, fractal displacement and crater generation, over the
+  five Musgrave fractal functions
+- **filter_createiso** (1) — a noisy isosurface
 - **filter_geodesic** (4) — distance along the surface from a point, the selection or the border,
   by Dijkstra or by the heat method
 - **filter_trioptimize** (3) — edge flipping for triangle shape or for curvature, and a Laplacian
@@ -63,7 +68,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 110 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 102 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -177,6 +182,11 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **Solids are built through a field, not from geometry.** The Voronoi scaffolding and the solid
+  wireframe both define a distance function and run marching tetrahedra on it, rather than
+  emitting cylinders and spheres. Constructing them directly is faster and leaves a
+  self-intersecting mess at every joint where several struts meet; the field has the joins built
+  in.
 - **One sparse solver, used four ways.** `math/sparse.ts` is a Jacobi-preconditioned conjugate
   gradient in a page: the heat-method geodesic, least-squares conformal maps and any Poisson
   problem on a mesh all reduce to it, and none of them needs a factorisation. Its `pin` moves a
