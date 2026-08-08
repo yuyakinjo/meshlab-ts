@@ -138,10 +138,26 @@ as upstream does — so "a rejected move leaves nothing behind" is testable, and
 tested, bit for bit. And the neighbourhood allowed to move is a fixed number of
 face rings around the seam rather than upstream's offset-threshold growth.
 
-**Stage D — output.** `packing.ts`, `atlas_render.ts`, the plugin, end-to-end
-tests: no two charts overlap in the packed atlas, every face has a non-degenerate
-UV triangle, and the resampled texture agrees with the original when sampled
-through both parametrizations.
+**Stage D — output. Done.** `parametrization/packing.ts` and the plugin, with 18
+tests. The packer rasterises each chart's *triangles* rather than an extracted
+outline: same occupancy, and it removes a step that fails on a chart with an
+interior hole or a non-simple boundary — where the failure mode is a chart
+packed by the wrong shape. Placement is lowest-horizon over a column profile,
+four rotations, largest chart first; 87–97% occupancy on synthetic inputs.
+
+The property that matters most is that no two charts claim the same texel, and
+it is tested by rasterising the packed result and looking for a cell claimed
+twice — not by comparing bounding boxes, which a quarter-turned chart would slip
+straight past.
+
+The texture is resampled in software through `rasteriseFace` and
+`pullPushFill`, as predicted: no GL context is involved anywhere.
+
+## Result
+
+**Done — 269 of 282.** Roughly 2,400 lines across seven modules and one plugin,
+with 103 tests, matching the estimate. Every divergence is recorded in the
+README's design notes.
 
 ## Divergences to expect
 

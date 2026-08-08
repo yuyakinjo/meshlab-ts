@@ -45,6 +45,7 @@ import { FilterScreenedPoisson } from "../meshlabplugins/filter_screened_poisson
 import { FilterSDF } from "../meshlabplugins/filter_sdfgpu/filter_sdfgpu.ts";
 import { FilterSelect } from "../meshlabplugins/filter_select/filter_select.ts";
 import { FilterTexture } from "../meshlabplugins/filter_texture/filter_texture.ts";
+import { FilterTextureDefrag } from "../meshlabplugins/filter_texture_defragmentation/filter_texture_defragmentation.ts";
 import { FilterTriOptimize } from "../meshlabplugins/filter_trioptimize/filter_trioptimize.ts";
 import { FilterUnsharp } from "../meshlabplugins/filter_unsharp/filter_unsharp.ts";
 import { FilterVoronoi } from "../meshlabplugins/filter_voronoi/filter_voronoi.ts";
@@ -70,6 +71,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterLayer(),
 	() => new FilterMLS(),
 	() => new FilterTexture(),
+	() => new FilterTextureDefrag(),
 	() => new FilterIsoParametrization(),
 	() => new FilterGeodesic(),
 	() => new FilterFractal(),

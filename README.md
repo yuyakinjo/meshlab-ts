@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 268 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 269 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -60,6 +60,9 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 - **filter_cubization** (1) — Liu and Jacobson's cubic stylization
 - **filter_developability** (1) — Stein, Grinspun and Crane's developability optimization, which
   pushes a surface toward pieces that can be cut flat and folded
+- **filter_texture_defragmentation** (1) — Maggiordomo, Cignoni and Tarini's atlas
+  defragmentation: merge the charts a photo-reconstruction cut apart, repack, and resample the
+  texture through the new parametrization
 - **filter_camera** (8) — set a mesh's or a raster's camera, move any or all of them, measure
   vertex quality from a camera, and re-orient normals to face one
 - **filter_dirt** (2) — dust accumulation and point-cloud movement over a surface
@@ -365,6 +368,20 @@ of truth for filter names and parameter defaults. No code is copied from it.
   surviving vertex's coordinates along the collapsed edge. The result preserves the
   parametrisation exactly rather than approximately, at the cost of decimating a little less near
   a seam; `Extratcoordw` is accepted and warned about rather than silently ignored.
+- **The atlas defragmenter is reimplemented, not ported, and diverges in four places.**
+  MeshLab vendors this as a 6,935-line sub-library; the port is in
+  `vcg/complex/parametrization/` (`chart_graph`, `seams`, `shell`, `arap2d`, `matching2`,
+  `defragment`, `packing`) and is documented stage by stage in
+  [docs/texture-defragmentation-port.md](docs/texture-defragmentation-port.md). The four
+  differences a user can observe: a merge is computed on a copy and committed only if it passes,
+  rather than performed destructively and unwound on rejection — so a refused merge provably
+  leaves nothing behind; the neighbourhood a merge may relax is a fixed number of face rings
+  rather than a distance threshold; the packer rasterises each chart's triangles instead of an
+  extracted outline, and searches area-ordered with four rotations instead of permuting the chart
+  order, which costs some atlas density (reported as `atlas_occupancy`) and buys determinism; and
+  the new texture is rasterised in software rather than through an OpenGL context. `timelimit`
+  is refused rather than honoured — a wall-clock bound would mean the same input did not give the
+  same atlas twice — with a deterministic `maxMoves` offered in its place.
 - **A Voronoi chart that will not flatten still gets real coordinates.** `Parametrization: Voronoi
   Atlas` partitions the mesh geodesically and flattens each region as a disk, but a region is not
   guaranteed to *be* a disk. Rather than leave such a region's coordinates untouched — which looks
