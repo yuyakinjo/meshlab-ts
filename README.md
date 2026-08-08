@@ -10,18 +10,20 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 236 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 242 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
-- **filter_clean** (11) — welding, degenerate and duplicate removal, isolated pieces,
-  non-manifold edge and vertex repair, T-vertices
+- **filter_clean** (15, complete) — welding, degenerate and duplicate removal, isolated pieces,
+  non-manifold edge and vertex repair, T-vertices, removal by quality, wedge-UV merging,
+  mismatched-border snapping, and ball-pivoting surface reconstruction
 - **filter_meshing** (17) — re-orientation, hole closing, QEM decimation, transforms,
   point-cloud normal estimation and smoothing, Loop/Butterfly/midpoint subdivision,
   isotropic explicit remeshing, clustering decimation, principal curvature directions
-- **filter_select** (22) — selection and deletion, dilation and erosion, selection by
+- **filter_select** (24, complete) — selection and deletion, dilation and erosion, selection by
   vertex/face quality, by colour in RGB or HSV, by view angle, by edge length, by connectivity,
-  by triangle shape and fold, and by local outlier probability
+  by triangle shape and fold, by local outlier probability, by self-intersection, and by
+  texture seam
 - **filter_measure** (8) — topological and geometric measures, the area and perimeter of a
   selection, quad-mesh measures over faux-tagged triangles, and per-vertex/per-face quality
   statistics and histograms
@@ -90,7 +92,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 46 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 40 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -204,6 +206,23 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **Ball pivoting interpolates; Screened Poisson approximates.** Both reconstruct a surface from
+  a point cloud, and which one is right depends on how much the points are trusted. Ball pivoting
+  uses the input points and only those, so a clean scan comes back exactly as measured and a
+  noisy one comes back noisy. Poisson fits an implicit function and re-samples it, which smooths
+  the noise away but moves every point and invents new ones. The ball's radius is the whole
+  parameter: gaps wider than it stay holes, detail finer than it is bridged over.
+- **Self-intersection reports crossings, not coplanar overlaps.** Every edge of each triangle is
+  tested against the other, which finds any pair that genuinely passes through — but two coplanar
+  triangles that overlap without an edge piercing the other's interior are not reported. That
+  matches upstream, and it is the right call for a mesh: two coplanar faces are far more often a
+  legitimate shared edge than a defect.
+- **Two filters ask for their own channel rather than declaring it a requirement.** Listing
+  `MM_WEDGTEXCOORD` has the framework allocate zeroed coordinates for a mesh that has none, and
+  the filter then quietly answers a question about a parametrization that does not exist —
+  "no seams", or a colour sampled at (0, 0). `Select Vertex Texture Seams` and
+  `Transfer Color: Texture to Vertex` check for the channel themselves so they can say which of
+  the two situations they found.
 - **The generated filter table swallowed the code after each switch.** The extractor gave the
   last `case` of a dispatch everything up to the end of the function, which in several plugins
   meant an `Error on Foo::filterName()` fallback string — so `Generate Scalar Harmonic Field` was

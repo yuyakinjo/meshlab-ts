@@ -11,6 +11,11 @@
  * indices. The filters call `Allocator.compactEveryVector` at the end.
  */
 import { MLInternalException } from "../../common/utilities/ml_exception.ts";
+import { KdTree } from "../space/index/kdtree.ts";
+import {
+	intersectionSegmentTriangle,
+	intersectionTriangleTriangle,
+} from "../space/intersection3.ts";
 import { Allocator } from "./allocator.ts";
 import type { CMeshO } from "./cmesho.ts";
 import { FaceFlag } from "./flags.ts";
@@ -1084,7 +1089,104 @@ export function removeFaceFoldByFlip(m: CMeshO, normalThresholdDeg = 175, repeat
 	return total;
 }
 
+/**
+ * The faces that pass through some other face.
+ *
+ * Pairs are found with a k-d tree over face centroids rather than the uniform
+ * grid VCG uses — same purpose, and the tree is already here. Faces that share
+ * a vertex get the offset treatment upstream applies: their opposite edges are
+ * pulled halfway toward the shared corner before testing, so two triangles that
+ * merely fold about a common vertex are not reported as crossing.
+ */
+export function selfIntersections(m: CMeshO): number[] {
+	const live: number[] = [];
+	for (let f = 0; f < m.faceSize; f++) if (!m.isFaceD(f)) live.push(f);
+	if (live.length === 0) return [];
+
+	const centres = new Float64Array(3 * live.length);
+	let maxRadius = 0;
+	live.forEach((f, i) => {
+		const p = corners(m, f);
+		for (let k = 0; k < 3; k++) {
+			centres[3 * i + k] = (p[0][k] + p[1][k] + p[2][k]) / 3;
+		}
+		const c = [centres[3 * i], centres[3 * i + 1], centres[3 * i + 2]];
+		for (const q of p) {
+			maxRadius = Math.max(maxRadius, Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]));
+		}
+	});
+	const tree = new KdTree(centres, live.length);
+
+	const hits = new Set<number>();
+	// Two faces can only meet if their centres are within the sum of their
+	// radii, and 2 * maxRadius bounds that for every pair.
+	const reach = 2 * maxRadius;
+	for (let i = 0; i < live.length; i++) {
+		const f = live[i];
+		for (const near of tree.withinRadius(
+			centres[3 * i],
+			centres[3 * i + 1],
+			centres[3 * i + 2],
+			reach,
+		)) {
+			const g = live[near.index];
+			// Each unordered pair once.
+			if (g <= f) continue;
+			if (testFaceFaceIntersection(m, f, g)) {
+				hits.add(f);
+				hits.add(g);
+			}
+		}
+	}
+	return [...hits].sort((a, b) => a - b);
+}
+
+const EPSIL = 1e-8;
+
+/** Whether two faces genuinely cross, discounting shared vertices. */
+export function testFaceFaceIntersection(m: CMeshO, f0: number, f1: number): boolean {
+	const shared: Array<[number, number]> = [];
+	for (let i = 0; i < 3; i++) {
+		for (let j = 0; j < 3; j++) if (m.fv(f0, i) === m.fv(f1, j)) shared.push([i, j]);
+	}
+	// Same three vertices: a duplicate face, which counts as intersecting.
+	if (shared.length === 3) return true;
+	const a = corners(m, f0);
+	const b = corners(m, f1);
+	if (shared.length === 0) return intersectionTriangleTriangle(a, b);
+	// Two shared vertices is a shared edge — neighbours, not a defect.
+	if (shared.length !== 1) return false;
+
+	// One shared corner. Shrink each triangle's opposite edge halfway toward
+	// that corner and test it against the other face: a genuine crossing still
+	// pierces, while two triangles merely hinged at the corner no longer touch.
+	const [i0, i1] = shared[0];
+	const shP = a[i0].map((c) => c * 0.5);
+	const halfway = (p: readonly number[]) => [0, 1, 2].map((k) => p[k] * 0.5 + shP[k]);
+	const probe = (
+		from: readonly number[],
+		to: readonly number[],
+		tri: readonly (readonly number[])[],
+	): boolean => {
+		const hit = intersectionSegmentTriangle(from, to, tri[0], tri[1], tri[2]);
+		if (hit === null) return false;
+		return !(hit.a + hit.b >= 1 || hit.a <= EPSIL || hit.b <= EPSIL);
+	};
+	if (probe(halfway(a[(i0 + 1) % 3]), halfway(a[(i0 + 2) % 3]), b)) return true;
+	if (probe(halfway(b[(i1 + 1) % 3]), halfway(b[(i1 + 2) % 3]), a)) return true;
+	return false;
+}
+
+function corners(m: CMeshO, f: number): number[][] {
+	return [0, 1, 2].map((k) => {
+		const v = m.fv(f, k);
+		return [m.vx(v), m.vy(v), m.vz(v)];
+	});
+}
+
 export const Clean = {
+	selfIntersections,
+	testFaceFaceIntersection,
 	removeDuplicateVertex,
 	removeDuplicateFace,
 	removeDegenerateFace,

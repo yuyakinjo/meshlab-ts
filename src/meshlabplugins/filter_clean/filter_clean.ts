@@ -27,9 +27,14 @@ import {
 	type PostConditionBox,
 } from "../../common/plugins/interfaces/filter_plugin.ts";
 import type { CallBackPos } from "../../common/utilities/callback.ts";
+import { MLException } from "../../common/utilities/ml_exception.ts";
 import { Allocator } from "../../vcg/complex/allocator.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
+import { ballPivoting } from "../../vcg/complex/create/ball_pivoting.ts";
+import { snapVertexBorder } from "../../vcg/complex/snap_border.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
+import { UpdateTexture } from "../../vcg/complex/update/texture.ts";
+import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
 
 /** Plugin-local action ids, mirroring the C++ enum. */
 export const FP = {
@@ -44,6 +49,10 @@ export const FP = {
 	FP_REMOVE_UNREFERENCED_VERTEX: 8,
 	FP_REMOVE_DUPLICATED_VERTEX: 9,
 	FP_REMOVE_FACE_ZERO_AREA: 10,
+	FP_BALL_PIVOTING: 11,
+	FP_REMOVE_WRT_Q: 12,
+	FP_SNAP_MISMATCHED_BORDER: 13,
+	FP_MERGE_WEDGE_TEX: 14,
 } as const;
 
 interface FilterSpec {
@@ -156,7 +165,62 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		filterClass: FilterClass.Cleaning,
 		requirements: MeshElement.MM_NONE,
 	},
+	[FP.FP_BALL_PIVOTING]: {
+		name: "Surface Reconstruction: Ball Pivoting",
+		pythonName: "generate_surface_reconstruction_ball_pivoting",
+		info:
+			"Given a point cloud with normals it reconstructs a surface using the <b>Ball Pivoting " +
+			"Algorithm</b>. Starting with a seed triangle, the algorithm pivots a ball around an " +
+			"edge until it touches another point, forming another triangle. The process continues " +
+			"until all reachable edges have been tried.<br>" +
+			"<b>The ball pivoting algorithm for surface reconstruction.</b><br>" +
+			"F. Bernardini, J. Mittleman, H. Rushmeier, C. Silva, G. Taubin.<br>" +
+			"IEEE TVCG 1999",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_VERTFACETOPO,
+	},
+	[FP.FP_REMOVE_WRT_Q]: {
+		name: "Remove Vertices wrt Quality",
+		pythonName: "meshing_remove_vertices_by_scalar",
+		info:
+			"Delete all the vertices with a quality lower than the given threshold, and all the " +
+			"faces using them.",
+		filterClass: FilterClass.Cleaning,
+		requirements: MeshElement.MM_VERTQUALITY,
+	},
+	[FP.FP_SNAP_MISMATCHED_BORDER]: {
+		name: "Snap Mismatched Borders",
+		pythonName: "meshing_snap_mismatched_borders",
+		info:
+			"Try to snap together adjacent borders that are slightly mismatched.<br>This situation " +
+			"can happen on badly processed meshes that are the result of the fusion of many range " +
+			"maps.",
+		filterClass: FilterClass.Cleaning,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_MERGE_WEDGE_TEX]: {
+		name: "Merge Wedge Texture Coord",
+		pythonName: "apply_texcoord_merge_per_wedge",
+		info:
+			"Merge together per-wedge texture coords that are very close. Used to correct real-valued " +
+			"approximation errors of texture coordinates.",
+		filterClass: FilterClass.Cleaning | FilterClass.Texture,
+		requirements: MeshElement.MM_VERTFACETOPO | MeshElement.MM_WEDGTEXCOORD,
+	},
 };
+
+/** The span of per-vertex quality, or 0..1 when there is nothing to measure. */
+function qualityRangeOf(m: MeshModel | undefined): { min: number; max: number } {
+	if (m === undefined) return { min: 0, max: 1 };
+	let min = Number.POSITIVE_INFINITY;
+	let max = Number.NEGATIVE_INFINITY;
+	for (let v = 0; v < m.cm.vertSize; v++) {
+		if (m.cm.isVertD(v)) continue;
+		min = Math.min(min, m.cm.vertQuality[v]);
+		max = Math.max(max, m.cm.vertQuality[v]);
+	}
+	return Number.isFinite(min) ? { min, max } : { min: 0, max: 1 };
+}
 
 export class FilterClean extends FilterPlugin {
 	pluginName(): string {
@@ -311,6 +375,82 @@ export class FilterClean extends FilterPlugin {
 				);
 				break;
 
+			case FP.FP_BALL_PIVOTING:
+				list.add(
+					new RichPercentage("BallRadius", 0, 0, diag, {
+						description: "Pivoting Ball radius (0 autoguess)",
+						tooltip:
+							"The radius of the ball pivoting (rolling) over the set of points. Gaps that are " +
+							"larger than the ball radius will not be filled; similarly the small pits that are " +
+							"smaller than the ball radius will be filled.",
+					}),
+				);
+				list.add(
+					new RichFloat("Clustering", 20, {
+						description: "Clustering radius (% of ball radius)",
+						tooltip:
+							"To avoid the creation of too small triangles, if a vertex is found too close to a " +
+							"previous one, it is clustered/merged with it.",
+					}),
+				);
+				list.add(
+					new RichFloat("CreaseThr", 90, {
+						description: "Angle Threshold (degrees)",
+						tooltip:
+							"If we encounter a crease angle that is too large we should stop the ball rolling",
+					}),
+				);
+				list.add(
+					new RichBool("DeleteFaces", false, {
+						description: "Delete initial set of faces",
+						tooltip:
+							"if true all the initial faces of the mesh are deleted and the whole surface is " +
+							"rebuilt from scratch. Otherwise the current faces are used as a starting point. " +
+							"Useful if you run the algorithm multiple times with an increasing ball radius.",
+					}),
+				);
+				break;
+
+			case FP.FP_REMOVE_WRT_Q: {
+				const range = qualityRangeOf(m);
+				list.add(
+					new RichPercentage("MaxQualityThr", range.min, range.min, range.max, {
+						description: "Delete all vertices with quality under:",
+					}),
+				);
+				break;
+			}
+
+			case FP.FP_SNAP_MISMATCHED_BORDER:
+				list.add(
+					new RichFloat("EdgeDistRatio", 1 / 100, {
+						description: "Edge Distance Ratio",
+						tooltip:
+							"Collapse edge when the edge / distance ratio is greater than this value. Larger " +
+							"values enforce that only vertices very close to the line are removed.",
+					}),
+				);
+				list.add(
+					new RichBool("UnifyVertices", true, {
+						description: "UnifyVertices",
+						tooltip: "if true the snap vertices are weld together.",
+					}),
+				);
+				break;
+
+			case FP.FP_MERGE_WEDGE_TEX:
+				list.add(
+					new RichFloat("MergeThr", 1 / 10000, {
+						description: "Merging Threshold",
+						tooltip:
+							"All the per-wedge texture coords that are on the same vertex and are distant less " +
+							"then the given threshold are merged together. It can be used to remove the fake " +
+							"texture seams that arise from error. Distance is in texture space (the default, " +
+							"1e-4, corresponds to one texel on a 10kx10k texture)",
+					}),
+				);
+				break;
+
 			default:
 				break;
 		}
@@ -322,7 +462,7 @@ export class FilterClean extends FilterPlugin {
 		params: RichParameterList,
 		doc: MeshDocument,
 		post: PostConditionBox,
-		_cb: CallBackPos,
+		cb: CallBackPos,
 	): FilterOutput {
 		const m = doc.mm();
 		const cm = m.cm;
@@ -423,6 +563,78 @@ export class FilterClean extends FilterPlugin {
 				const total = Clean.removeFaceFoldByFlip(cm);
 				doc.Log.log(`Successfully flipped ${total} folded faces`);
 				return this.finish(m, { flippedFaces: total });
+			}
+
+			case FP.FP_BALL_PIVOTING: {
+				if (params.getBool("DeleteFaces")) {
+					for (let f = 0; f < cm.faceSize; f++) if (!cm.isFaceD(f)) Allocator.deleteFace(cm, f);
+					Allocator.compactEveryVector(cm);
+				}
+				const clustering = params.getFloat("Clustering") / 100;
+				if (!(clustering > 0) || clustering >= 1) {
+					throw new MLException(
+						`The clustering radius must be a percentage strictly between 0 and 100, got ${params.getFloat("Clustering")}`,
+					);
+				}
+				const result = ballPivoting(cm, {
+					radius: params.getAbsPerc("BallRadius"),
+					clustering,
+					creaseAngle: (params.getFloat("CreaseThr") * Math.PI) / 180,
+					progress: (percent) => cb(percent, "Ball pivoting"),
+				});
+				m.clearDataMask(MeshElement.MM_FACEFACETOPO);
+				doc.Log.log(
+					`Reconstructed surface with a ball of radius ${result.radius}: added ${result.addedFaces} faces`,
+				);
+				return this.finish(m, { added_faces: result.addedFaces, radius: result.radius });
+			}
+
+			case FP.FP_REMOVE_WRT_Q: {
+				const threshold = params.getAbsPerc("MaxQualityThr");
+				let deletedV = 0;
+				for (let v = 0; v < cm.vertSize; v++) {
+					if (cm.isVertD(v) || cm.vertQuality[v] >= threshold) continue;
+					Allocator.deleteVertex(cm, v);
+					deletedV++;
+				}
+				let deletedF = 0;
+				for (let f = 0; f < cm.faceSize; f++) {
+					if (cm.isFaceD(f)) continue;
+					// A face is only as alive as its three vertices.
+					if (!cm.isVertD(cm.fv(f, 0)) && !cm.isVertD(cm.fv(f, 1)) && !cm.isVertD(cm.fv(f, 2))) {
+						continue;
+					}
+					Allocator.deleteFace(cm, f);
+					deletedF++;
+				}
+				m.clearDataMask(MeshElement.MM_FACEFACETOPO);
+				doc.Log.log(
+					`Deleted ${deletedV} vertices and ${deletedF} faces with a quality lower than ${threshold}`,
+				);
+				return this.finish(m, { deleted_vertices: deletedV, deleted_faces: deletedF });
+			}
+
+			case FP.FP_SNAP_MISMATCHED_BORDER: {
+				const split = snapVertexBorder(cm, params.getFloat("EdgeDistRatio"));
+				let merged = 0;
+				if (params.getBool("UnifyVertices")) {
+					// The split alone only makes the two borders compatible. Welding
+					// is what actually joins them, and it is a separate step because
+					// it is the one that can go wrong.
+					UpdateBounding.box(cm);
+					merged = Clean.mergeCloseVertex(cm, (cm.bbox.diagonal || 1) / 100000);
+				}
+				m.clearDataMask(MeshElement.MM_FACEFACETOPO | MeshElement.MM_VERTFACETOPO);
+				doc.Log.log(`Split ${split} faces to snap, and merged ${merged} vertices`);
+				return this.finish(m, { split_faces: split, merged_vertices: merged });
+			}
+
+			case FP.FP_MERGE_WEDGE_TEX: {
+				const threshold = params.getFloat("MergeThr");
+				UpdateTopology.vertexFace(cm);
+				const total = UpdateTexture.wedgeTexMergeClose(cm, threshold);
+				doc.Log.log(`Merged ${total} wedge texture coords closer than ${threshold}`);
+				return { merged: total };
 			}
 
 			default:

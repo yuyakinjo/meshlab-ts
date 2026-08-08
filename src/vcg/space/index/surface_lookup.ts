@@ -65,6 +65,40 @@ export class SurfaceLookup {
 		}
 		return best;
 	}
+
+	/**
+	 * Every nearby face together with the closest point on it, nearest first,
+	 * rather than only the winner.
+	 *
+	 * The border snapper needs this: the face it wants is not the nearest one
+	 * but the nearest one whose *border edge* the query lands on, and that test
+	 * can only be applied once the candidates are in hand.
+	 */
+	closestWithin(x: number, y: number, z: number, maxDistance: number, k = 20): NearHit[] {
+		const out: NearHit[] = [];
+		for (const i of this.tree.nearestToCoord(x, y, z, k)) {
+			const f = this.faces[i];
+			const hit = closestOnTriangle(this.cm, f, x, y, z);
+			if (hit.distance > maxDistance) continue;
+			const p = [0, 0, 0];
+			for (let k2 = 0; k2 < 3; k2++) {
+				const v = this.cm.fv(f, k2);
+				p[0] += this.cm.vx(v) * hit.bary[k2];
+				p[1] += this.cm.vy(v) * hit.bary[k2];
+				p[2] += this.cm.vz(v) * hit.bary[k2];
+			}
+			out.push({ face: f, bary: hit.bary, x: p[0], y: p[1], z: p[2], distance: hit.distance });
+		}
+		return out.sort((a, b) => a.distance - b.distance);
+	}
+}
+
+/** A {@link Hit} that also says where on the face the closest point landed. */
+export interface NearHit extends Hit {
+	readonly x: number;
+	readonly y: number;
+	readonly z: number;
+	readonly distance: number;
 }
 
 /**

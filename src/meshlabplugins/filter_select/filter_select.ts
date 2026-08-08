@@ -63,6 +63,8 @@ export const FP = {
 	FP_SELECT_UGLY: 19,
 	FP_SELECT_OUTLIER: 20,
 	FP_SELECT_DELETE_ALL_FACE: 21,
+	CP_SELFINTERSECT_SELECT: 22,
+	CP_SELECT_TEXBORDER: 23,
 } as const;
 
 interface FilterSpec {
@@ -259,6 +261,29 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		filterClass: FilterClass.Selection,
 		requirements: MeshElement.MM_NONE,
 		destructive: true,
+	},
+	[FP.CP_SELFINTERSECT_SELECT]: {
+		name: "Select Self Intersecting Faces",
+		pythonName: "compute_selection_by_self_intersections_per_face",
+		info: "Select only self intersecting faces.",
+		filterClass: FilterClass.Selection | FilterClass.Cleaning,
+		requirements: MeshElement.MM_FACEFACETOPO,
+		destructive: false,
+	},
+	[FP.CP_SELECT_TEXBORDER]: {
+		name: "Select Vertex Texture Seams",
+		pythonName: "compute_selection_by_texture_seams_per_vertex",
+		info:
+			"Colorize only border edges of the texture atlas, in order to check the correctness of the " +
+			"parametrization.",
+		filterClass: FilterClass.Selection | FilterClass.Texture,
+		// Deliberately not requiring MM_WEDGTEXCOORD: the framework would
+		// allocate zeroed coordinates for a mesh that has none, every face would
+		// then agree with its neighbour, and the filter would report "no seams"
+		// for a mesh that has no parametrization at all. Asking for the channel
+		// itself lets it say which of the two it found.
+		requirements: MeshElement.MM_FACEFACETOPO,
+		destructive: false,
 	},
 };
 
@@ -912,6 +937,44 @@ export class FilterSelect extends FilterPlugin {
 				}
 				doc.Log.log(`Deleted all ${deleted} faces, leaving a point cloud`);
 				return { deleted_faces: deleted };
+			}
+
+			case FP.CP_SELFINTERSECT_SELECT: {
+				const hits = Clean.selfIntersections(cm);
+				for (let f = 0; f < cm.faceSize; f++) cm.faceFlags[f] &= ~FaceFlag.SELECTED;
+				for (const f of hits) cm.faceFlags[f] |= FaceFlag.SELECTED;
+				doc.Log.log(`Selected ${hits.length} self-intersecting faces`);
+				return { selected_faces: hits.length };
+			}
+
+			case FP.CP_SELECT_TEXBORDER: {
+				if (cm.wedgeTexCoord === null) {
+					throw new MLException(
+						"Select Vertex Texture Seams needs per-wedge texture coordinates, which this mesh " +
+							"does not carry.",
+					);
+				}
+				// A seam is a border of the *texture* topology, so building that
+				// adjacency turns the question into the one the border machinery
+				// already answers.
+				UpdateTopology.faceFaceFromTexCoord(cm);
+				UpdateFlags.faceBorderFromFF(cm);
+				UpdateFlags.vertexBorderFromFace(cm);
+				let selected = 0;
+				for (let v = 0; v < cm.vertSize; v++) {
+					if (cm.isVertD(v)) continue;
+					if ((cm.vertFlags[v] & VertexFlag.BORDER) !== 0) {
+						cm.vertFlags[v] |= VertexFlag.SELECTED;
+						selected++;
+					} else cm.vertFlags[v] &= ~VertexFlag.SELECTED;
+				}
+				// Put the ordinary topology back: leaving the mesh believing its
+				// charts are its components would break every later filter.
+				UpdateTopology.faceFace(cm);
+				UpdateFlags.faceBorderFromFF(cm);
+				UpdateFlags.vertexBorderFromFace(cm);
+				doc.Log.log(`Selected ${selected} vertices on a texture seam`);
+				return { selected_vertices: selected };
 			}
 
 			default:

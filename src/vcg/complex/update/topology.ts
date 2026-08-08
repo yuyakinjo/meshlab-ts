@@ -194,4 +194,73 @@ export const UpdateTopology = {
 	forEachVFCorner,
 	faceRingSize,
 	isManifoldEdge,
+	faceFaceFromTexCoord,
+	detachFF,
 } as const;
+
+/**
+ * FF adjacency that treats a texture seam as a boundary.
+ *
+ * Builds the ordinary adjacency and then detaches every edge whose two faces
+ * disagree about the UVs along it. The result answers "what are the charts"
+ * with the same border machinery that answers "what are the holes" — which is
+ * why the seam selection filter is three lines rather than its own traversal.
+ */
+export function faceFaceFromTexCoord(m: CMeshO): void {
+	faceFace(m);
+	const wt = m.wedgeTexCoord;
+	if (wt === null) return;
+	const uv = (f: number, k: number): [number, number] => [wt[6 * f + 2 * k], wt[6 * f + 2 * k + 1]];
+	const same = (a: [number, number], b: [number, number]) => a[0] === b[0] && a[1] === b[1];
+
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let e = 0; e < 3; e++) {
+			if (m.isBorderFF(f, e)) continue;
+			const g = m.ffp(f, e);
+			const ge = m.ffi(f, e);
+			// The two faces may traverse the shared edge in either direction, so
+			// which of the neighbour's corners to compare against depends on
+			// whether the first endpoints already agree.
+			const aligned = m.fv(f, e) === m.fv(g, ge);
+			const seam = aligned
+				? !same(uv(f, e), uv(g, ge)) || !same(uv(f, (e + 1) % 3), uv(g, (ge + 1) % 3))
+				: !same(uv(f, e), uv(g, (ge + 1) % 3)) || !same(uv(f, (e + 1) % 3), uv(g, ge));
+			if (seam) detachFF(m, f, e);
+		}
+	}
+}
+
+/**
+ * Removes face `f`'s edge `e` from its adjacency ring, leaving it a border.
+ *
+ * VCG's `face::FFDetach`. The ring is walked to find the face pointing back at
+ * this one so its link can be redirected, which is what keeps a non-manifold
+ * ring consistent rather than merely dropping one of its members.
+ */
+export function detachFF(m: CMeshO, f: number, e: number): void {
+	if (m.isBorderFF(f, e)) return;
+	let curF = m.ffp(f, e);
+	let curE = m.ffi(f, e);
+	// Walk to the ring member immediately before `f`.
+	while (m.ffp(curF, curE) !== f || m.ffi(curF, curE) !== e) {
+		const nf = m.ffp(curF, curE);
+		const ne = m.ffi(curF, curE);
+		curF = nf;
+		curE = ne;
+	}
+	const ff = m.ffFace as Int32Array;
+	const fe = m.ffEdge as Uint8Array;
+	if (curF === f && curE === e) {
+		// A two-face ring: the neighbour becomes a border too.
+		const g = ff[3 * f + e];
+		const ge = fe[3 * f + e];
+		ff[3 * g + ge] = g;
+		fe[3 * g + ge] = ge;
+	} else {
+		ff[3 * curF + curE] = ff[3 * f + e];
+		fe[3 * curF + curE] = fe[3 * f + e];
+	}
+	ff[3 * f + e] = f;
+	fe[3 * f + e] = e;
+}

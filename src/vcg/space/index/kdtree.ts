@@ -231,14 +231,27 @@ export class KdTree {
 
 	/** The `k` points nearest to `point`, itself included, nearest first. */
 	nearest(point: number, k: number): Int32Array {
-		const wanted = Math.max(1, Math.min(k, this.count));
-		const found = new Int32Array(wanted).fill(-1);
-		const distances = new Float64Array(wanted).fill(Infinity);
-		const target = [
+		return this.nearestToCoord(
 			this.positions[point * 3],
 			this.positions[point * 3 + 1],
 			this.positions[point * 3 + 2],
-		];
+			k,
+		);
+	}
+
+	/**
+	 * The `k` points nearest to a coordinate, nearest first.
+	 *
+	 * VCG's `doQueryK`. Differs from {@link nearest} only in that the query
+	 * point need not be one of the indexed ones — which is what a query at an
+	 * edge midpoint needs.
+	 */
+	nearestToCoord(x: number, y: number, z: number, k: number): Int32Array {
+		const wanted = Math.max(1, Math.min(k, this.count));
+		const found = new Int32Array(wanted).fill(-1);
+		if (this.count === 0) return found.subarray(0, 0);
+		const distances = new Float64Array(wanted).fill(Infinity);
+		const target = [x, y, z];
 		let filled = 0;
 
 		const consider = (candidate: number) => {
@@ -271,6 +284,6 @@ export class KdTree {
 			if (filled < wanted || offset * offset < distances[wanted - 1]) visit(far);
 		};
 		visit(0);
-		return found;
+		return filled < wanted ? found.subarray(0, filled) : found;
 	}
 }
