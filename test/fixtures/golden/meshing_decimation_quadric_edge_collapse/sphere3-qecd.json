@@ -1,0 +1,23 @@
+{
+  "compare": "loose",
+  "filter": "meshing_decimation_quadric_edge_collapse",
+  "input": "sphere3.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "TargetFaceNum": 320
+  },
+  "summary": {
+    "area": 12.476444244384766,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 480,
+    "fn": 320,
+    "genus": 0,
+    "geometryHash": "1721d64373d970d494aed18511bc482f3b1e8970f676cfdffddbcc937386e4a5",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 162,
+    "volume": 4.109395808090225
+  }
+}

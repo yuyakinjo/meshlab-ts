@@ -15,6 +15,8 @@ import {
 } from "../../common/plugins/interfaces/io_plugin.ts";
 import type { CallBackPos } from "../../common/utilities/callback.ts";
 import { FileFormat } from "../../common/utilities/file_format.ts";
+import { Allocator } from "../../vcg/complex/allocator.ts";
+import { Clean } from "../../vcg/complex/clean.ts";
 import { readObj, writeObj } from "./obj.ts";
 import { readOff, writeOff } from "./off.ts";
 import { readPly, writePly } from "./ply.ts";
@@ -38,13 +40,36 @@ export class BaseMeshIOPlugin extends IOPlugin {
 		return [PLY, STL, OBJ, OFF];
 	}
 
+	/**
+	 * STL is the one format whose *reading* has a parameter, and MeshLab's
+	 * default matters: the file stores an unwelded triangle soup, and MeshLab
+	 * unifies exactly-duplicated vertices on load unless told not to. A loader
+	 * that keeps the soup hands every downstream filter a mesh with no
+	 * adjacency at all — nothing is watertight, everything is border — which is
+	 * compatible with the bytes but not with MeshLab.
+	 */
+	override initPreOpenParameter(format: string): RichParameterList {
+		const list = new RichParameterList();
+		if (format.toUpperCase() === "STL") {
+			list.add(
+				new RichBool("unify_vertices", true, {
+					description: "Unify Duplicated Vertices in STL files",
+					tooltip:
+						"The STL format is not an vertex-indexed format. Each triangle is composed by " +
+						"independent vertices, so, usually, duplicated vertices should be unified",
+				}),
+			);
+		}
+		return list;
+	}
+
 	open(
 		format: string,
 		fileName: string,
 		data: Uint8Array,
 		m: MeshModel,
 		mask: OpenMaskBox,
-		_params: RichParameterList,
+		params: RichParameterList,
 		_cb: CallBackPos,
 	): void {
 		switch (format.toUpperCase()) {
@@ -55,6 +80,10 @@ export class BaseMeshIOPlugin extends IOPlugin {
 				readStl(m.cm, data, fileName);
 				// STL carries nothing but geometry: no colour, no quality, and
 				// a per-facet normal we recompute rather than trust.
+				if (!params.hasParameter("unify_vertices") || params.getBool("unify_vertices")) {
+					Clean.removeDuplicateVertex(m.cm);
+					Allocator.compactEveryVector(m.cm);
+				}
 				mask.mask = MeshElement.MM_VERTCOORD | MeshElement.MM_FACEVERT;
 				return;
 			case "OBJ":

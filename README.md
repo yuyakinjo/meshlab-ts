@@ -458,6 +458,32 @@ of truth for filter names and parameter defaults. No code is copied from it.
 
 ## Testing
 
+### Differential tests against real PyMeshLab
+
+Mathematical correctness is not the same claim as compatibility — two implementations can both be
+right and still disagree — so `test/golden/` holds what a genuine PyMeshLab (2025.7.post1, the
+same generation as the source in `.reference/`) produced for a set of (mesh, filter, parameters)
+triples, and every ordinary `bun test` runs the identical triples here and compares. No Python is
+involved in running them; regenerating the goldens is the deliberate step
+(`MESHLAB_TS_ALLOW_GOLDEN_REGEN=1 bun run golden:regen`, via Docker or a local venv).
+
+Each case declares how much agreement is expected and is held to exactly that: `exact` means the
+geometry digest itself matches — the same coordinates to nine decimals at float32 granularity,
+whatever order they were produced in — `equivalent` means every topological integer matches with
+scalars at 1e-6, and `loose` covers the heap-and-heuristic filters where which element wins a tie
+is implementation-defined. Sixteen of the current twenty-four cases hold at `exact`.
+
+The first run of this harness found and fixed four genuine incompatibilities: STL files were
+loaded as an unwelded soup where MeshLab unifies duplicated vertices by default
+(`unify_vertices`); the Laplacian smoother took the plain neighbourhood mean where VCG includes
+the vertex itself in its average (`(P + Σ) / (n + 1)`) — about one part in valence per step, 0.5%
+of surface area by step three; its `Boundary` flag was implemented as a pin where MeshLab either
+smooths the outline along its own curve or, when the flag is off, smooths it like the interior;
+and clustering decimation binned from the raw bounding box where VCG inflates the box by one cell,
+truncates the cell count, and re-derives the voxel — after which the same sphere decimates to the
+same 114 vertices, 224 faces and the same twelve non-manifold edges as MeshLab itself, wart for
+wart.
+
 Tests are built on mathematics rather than on recorded output, because the whole point of the
 project is not needing a Python install:
 

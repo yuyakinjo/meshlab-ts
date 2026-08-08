@@ -1,0 +1,21 @@
+{
+  "compare": "exact",
+  "filter": "meshing_remove_duplicate_vertices",
+  "input": "cube_binary.stl",
+  "meshlabVersion": "2025.7.post1",
+  "params": {},
+  "summary": {
+    "area": 600.0,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 18,
+    "fn": 12,
+    "genus": 0,
+    "geometryHash": "e87a4f256c648157bab7bf2222d31323758816a2e8a1703801baa7ef8a488346",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 8,
+    "volume": 1000.0
+  }
+}

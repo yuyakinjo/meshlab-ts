@@ -1,0 +1,26 @@
+{
+  "compare": "exact",
+  "filter": "meshing_surface_subdivision_midpoint",
+  "input": "sphere.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "Iterations": 1,
+    "Threshold": {
+      "abs": 0.0
+    }
+  },
+  "summary": {
+    "area": 12.329062461853027,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 1920,
+    "fn": 1280,
+    "genus": 0,
+    "geometryHash": "e83f398a2ed31ef1013d89eb27e347e42da76c1e190f82d658447cd93601b6dc",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 642,
+    "volume": 4.047005367354517
+  }
+}

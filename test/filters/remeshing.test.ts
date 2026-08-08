@@ -231,18 +231,34 @@ describe("clustering decimation", () => {
 		}
 	});
 
-	test("keeps the surface closed and the right genus", () => {
-		for (const [label, mesh, genus] of [
-			["sphere", Platonic.sphere(4), 0],
-			["torus", Platonic.torus(3, 1, 40, 20), 1],
-		] as const) {
+	test("reproduces MeshLab's own result, warts included", () => {
+		// Clustering decimation does NOT promise a manifold result, and neither
+		// does MeshLab's: run the identical inputs through real PyMeshLab
+		// (2025.7.post1, threshold 0.35 absolute) and the sphere comes back with
+		// exactly 12 non-manifold edges. Since the grid was aligned to VCG's
+		// (inflated box, truncated cell count, re-derived voxel), every count
+		// below matches upstream's bit for bit — including the wart.
+		{
+			const mesh = Platonic.sphere(4);
 			clusteringDecimation(mesh, 0.35);
 			const facts = computeFacts(mesh);
-			expect(facts.nonManifoldEdges, label).toBe(0);
-			expect(facts.components, label).toBe(1);
-			expect(facts.watertight, label).toBe(true);
-			expect(facts.genus, label).toBe(genus);
-			assertAllocatorConsistent(mesh, label);
+			expect(mesh.vn).toBe(114);
+			expect(mesh.fn).toBe(224);
+			expect(facts.nonManifoldEdges).toBe(12);
+			expect(facts.components).toBe(1);
+			assertAllocatorConsistent(mesh, "sphere");
+		}
+		// The torus at the same threshold stays clean, upstream and here alike.
+		{
+			const mesh = Platonic.torus(3, 1, 40, 20);
+			clusteringDecimation(mesh, 0.35);
+			const facts = computeFacts(mesh);
+			expect(mesh.vn).toBe(692);
+			expect(mesh.fn).toBe(1384);
+			expect(facts.nonManifoldEdges).toBe(0);
+			expect(facts.watertight).toBe(true);
+			expect(facts.genus).toBe(1);
+			assertAllocatorConsistent(mesh, "torus");
 		}
 	});
 

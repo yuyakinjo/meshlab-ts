@@ -1,0 +1,29 @@
+{
+  "compare": "equivalent",
+  "filter": "meshing_surface_subdivision_loop",
+  "input": "sphere.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "Iterations": 1,
+    "LoopWeight": {
+      "enum": "Loop"
+    },
+    "Threshold": {
+      "abs": 0.0
+    }
+  },
+  "summary": {
+    "area": 12.084447860717773,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 1920,
+    "fn": 1280,
+    "genus": 0,
+    "geometryHash": "2b0a5a61b5a23cadaf0e4fdb5aabb1fe87cf59476849c57970584049cd01e8ab",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 642,
+    "volume": 3.944054886501601
+  }
+}

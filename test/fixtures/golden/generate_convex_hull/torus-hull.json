@@ -1,0 +1,21 @@
+{
+  "compare": "equivalent",
+  "filter": "generate_convex_hull",
+  "input": "torus.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {},
+  "summary": {
+    "area": 52.44199752807617,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 498,
+    "fn": 332,
+    "genus": 0,
+    "geometryHash": "0272b95be936139a1b3fefc60c62d235b973e50db59eac1558e30d66a70ecb4d",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 168,
+    "volume": 22.451126560876254
+  }
+}

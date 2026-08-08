@@ -715,12 +715,25 @@ export function clusteringDecimation(m: CMeshO, cellSize: number): void {
 	if (!(cellSize > 0)) throw new Error(`Clustering needs a positive cell size, got ${cellSize}`);
 	UpdateBounding.box(m);
 	UpdateNormal.perVertexNormalizedPerFaceNormalized(m);
-	const low = m.bbox.min;
+
+	// VCG's grid, not the naive one: the box is inflated by one cell on every
+	// side, the cell count per axis is truncated from the inflated extent, and
+	// the voxel actually used is the extent divided back by that count — so the
+	// real cell edge is a little *larger* than asked for, and the bin walls sit
+	// where MeshLab's sit. Binning straight off bbox.min with the exact cell
+	// size puts every wall elsewhere and clusters differently.
+	const low = [m.bbox.min[0] - cellSize, m.bbox.min[1] - cellSize, m.bbox.min[2] - cellSize];
+	const high = [m.bbox.max[0] + cellSize, m.bbox.max[1] + cellSize, m.bbox.max[2] + cellSize];
+	const voxel = [0, 1, 2].map((axis) => {
+		const dim = high[axis] - low[axis];
+		const count = Math.max(1, Math.trunc(dim / cellSize));
+		return dim / count;
+	});
 
 	const cellOf = (x: number, y: number, z: number): string => {
-		const i = Math.floor((x - low[0]) / cellSize);
-		const j = Math.floor((y - low[1]) / cellSize);
-		const k = Math.floor((z - low[2]) / cellSize);
+		const i = Math.floor((x - low[0]) / voxel[0]);
+		const j = Math.floor((y - low[1]) / voxel[1]);
+		const k = Math.floor((z - low[2]) / voxel[2]);
 		return `${i},${j},${k}`;
 	};
 

@@ -35,15 +35,36 @@ if (!existsSync(script)) {
 	process.exit(1);
 }
 
-const docker = Bun.spawnSync(["docker", "--version"], { stdout: "pipe", stderr: "pipe" });
-if (docker.exitCode !== 0) {
-	console.error("docker is not available; this script needs it to run pymeshlab");
-	process.exit(1);
+// Pinned: golden values are only comparable when they come from one known
+// MeshLab version, and the version is recorded in every golden file. 2025.7
+// matches the source in `.reference/` that the port was written against.
+const PYMESHLAB_VERSION = "2025.7.post1";
+
+// A local interpreter with pymeshlab installed skips Docker entirely:
+//
+//   python3.12 -m venv /tmp/pml && /tmp/pml/bin/pip install pymeshlab==2025.7.post1
+//   MESHLAB_TS_ALLOW_GOLDEN_REGEN=1 PYMESHLAB_PYTHON=/tmp/pml/bin/python bun run golden:regen
+//
+// pymeshlab ships wheels for CPython 3.10-3.13 only.
+const localPython = process.env.PYMESHLAB_PYTHON;
+if (localPython !== undefined) {
+	console.log(`running regen.py with ${localPython} against ${fixtures}`);
+	const proc = Bun.spawnSync([localPython, script], {
+		stdout: "inherit",
+		stderr: "inherit",
+		env: { ...process.env, FIXTURES_DIR: fixtures, PYMESHLAB_VERSION },
+	});
+	process.exit(proc.exitCode ?? 1);
 }
 
-// Pinned: golden values are only comparable when they come from one known
-// MeshLab version, and the version is recorded in every golden file.
-const PYMESHLAB_VERSION = "2023.12.post3";
+const docker = Bun.spawnSync(["docker", "--version"], { stdout: "pipe", stderr: "pipe" });
+if (docker.exitCode !== 0) {
+	console.error(
+		"docker is not available; either install it, or point PYMESHLAB_PYTHON at a\n" +
+			"CPython 3.10-3.13 with pymeshlab installed (see the comment in this script).",
+	);
+	process.exit(1);
+}
 
 console.log(`running pymeshlab ${PYMESHLAB_VERSION} in Docker against ${fixtures}`);
 const proc = Bun.spawnSync(
@@ -55,7 +76,7 @@ const proc = Bun.spawnSync(
 		`${fixtures}:/fixtures`,
 		"-e",
 		`PYMESHLAB_VERSION=${PYMESHLAB_VERSION}`,
-		"python:3.11-slim",
+		"python:3.12-slim",
 		"sh",
 		"-c",
 		`pip install --quiet pymeshlab==${PYMESHLAB_VERSION} && python /fixtures/_regen/regen.py`,

@@ -634,8 +634,10 @@ export class FilterUnsharp extends FilterPlugin {
 				Smooth.vertexCoordLaplacian(cm, steps, {
 					smoothSelected,
 					cotangentWeight: params.getBool("cotangentWeight"),
-					// "1D Boundary Smoothing" off means hold the boundary put.
-					pinBoundary: !params.getBool("Boundary"),
+					// MeshLab's "1D Boundary Smoothing": on, the boundary is
+					// smoothed along its own curve; off, border flags are cleared
+					// and the boundary is smoothed like the interior. Not a pin.
+					boundary: params.getBool("Boundary"),
 				});
 				doc.Log.log(`Smoothed with ${steps} Laplacian steps`);
 				break;

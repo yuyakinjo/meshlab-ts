@@ -261,10 +261,13 @@ describe("the kernel's I/O front door", () => {
 
 	test("reads every fixture we ship", () => {
 		const kernel = MeshLabKernel.default();
+		// STL counts are the *welded* ones: MeshLab unifies duplicated vertices
+		// on STL load by default (io_base's unify_vertices), and so do we. The
+		// raw soup is still reachable with { unify_vertices: false }.
 		for (const [file, verts, faces] of [
-			["cube_binary.stl", 36, 12],
-			["cube_ascii.stl", 36, 12],
-			["cube_with_holes.stl", 30, 10],
+			["cube_binary.stl", 8, 12],
+			["cube_ascii.stl", 8, 12],
+			["cube_with_holes.stl", 8, 10],
 			["tetra_ascii.ply", 4, 4],
 			["tetra_binary.ply", 4, 4],
 			["sphere.ply", 162, 320],

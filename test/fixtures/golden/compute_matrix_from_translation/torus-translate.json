@@ -1,0 +1,25 @@
+{
+  "compare": "exact",
+  "filter": "compute_matrix_from_translation",
+  "input": "torus.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "axisX": 1.5,
+    "axisY": -2.0,
+    "axisZ": 0.25
+  },
+  "summary": {
+    "area": 46.50160217285156,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 864,
+    "fn": 576,
+    "genus": 1,
+    "geometryHash": "82a56835dbeefb2d9fd38041a9bd2a44e290638f59df2e3eaf80b2179038c354",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 288,
+    "volume": 13.41717929811467
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "compare": "exact",
+  "filter": "compute_matrix_from_rotation",
+  "input": "sphere.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "angle": 90.0,
+    "rotAxis": {
+      "enum": "Z axis"
+    }
+  },
+  "summary": {
+    "area": 12.329062461853027,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 480,
+    "fn": 320,
+    "genus": 0,
+    "geometryHash": "f40a699f463cce2a4c9146b72dd6fe08b08e1d9d3a17773723f30bbf5f36d10a",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 162,
+    "volume": 4.047005367354518
+  }
+}

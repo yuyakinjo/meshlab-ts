@@ -1,0 +1,25 @@
+{
+  "compare": "loose",
+  "filter": "meshing_decimation_clustering",
+  "input": "sphere3.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "Threshold": {
+      "abs": 0.3
+    }
+  },
+  "summary": {
+    "area": 12.097233772277832,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 450,
+    "fn": 300,
+    "genus": 0,
+    "geometryHash": "fc89ee5be559fe502f304d596224d739caca838197ca414b9a51587f74507ab2",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 152,
+    "volume": 3.858105437133918
+  }
+}

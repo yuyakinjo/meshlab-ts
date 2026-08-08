@@ -1,0 +1,25 @@
+{
+  "compare": "equivalent",
+  "filter": "apply_coord_taubin_smoothing",
+  "input": "sphere3.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "lambda": 0.5,
+    "mu": -0.53,
+    "stepSmoothNum": 10
+  },
+  "summary": {
+    "area": 12.581450462341309,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 1920,
+    "fn": 1280,
+    "genus": 0,
+    "geometryHash": "b5777322058483699841806cb4bf4affbb0ab2c916a35f10672e8e911dc67600",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 642,
+    "volume": 4.190152305354927
+  }
+}

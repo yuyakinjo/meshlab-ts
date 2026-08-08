@@ -1,0 +1,26 @@
+{
+  "compare": "exact",
+  "filter": "meshing_surface_subdivision_midpoint",
+  "input": "tetra_binary.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "Iterations": 2,
+    "Threshold": {
+      "abs": 0.0
+    }
+  },
+  "summary": {
+    "area": 13.856406211853027,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 96,
+    "fn": 64,
+    "genus": 0,
+    "geometryHash": "b81058720b2e7ef72b9130142c5b7eaa5e5a3a529e90db1ee43a572c53541c7b",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 34,
+    "volume": 2.6666666666666656
+  }
+}

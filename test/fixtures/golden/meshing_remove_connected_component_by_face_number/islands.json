@@ -1,0 +1,23 @@
+{
+  "compare": "exact",
+  "filter": "meshing_remove_connected_component_by_face_number",
+  "input": "islands.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "MinComponentSize": 25
+  },
+  "summary": {
+    "area": 12.329062461853027,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 480,
+    "fn": 320,
+    "genus": 0,
+    "geometryHash": "9e374774c96f716d14db31e5a557ce324243d8e05bc9ca716d1f5952e4c285c2",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 162,
+    "volume": 4.0470053673545205
+  }
+}

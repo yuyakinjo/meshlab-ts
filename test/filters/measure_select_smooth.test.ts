@@ -398,14 +398,29 @@ describe("filter_unsharp: smoothing", () => {
 		}
 	});
 
-	test("Boundary=false pins an open mesh's outline", () => {
-		const { mesh } = apply(gridPlane(6, 6), "Laplacian Smooth", {
+	test("Boundary switches between 1D outline smoothing and full smoothing", () => {
+		// Neither setting pins the outline — that was this test's old premise,
+		// and MeshLab does not do it. Boundary=true smooths the outline along
+		// its own curve, which rounds the square's corners off; Boundary=false
+		// clears the border flags and the outline is averaged with the
+		// interior, shrinking the whole sheet. The expected numbers are what
+		// real PyMeshLab (2025.7.post1) measures on this same grid, and the
+		// tolerance is its float32 storage.
+		const along = apply(gridPlane(6, 6), "Laplacian Smooth", {
+			stepSmoothNum: 20,
+			Boundary: true,
+			cotangentWeight: false,
+		});
+		expect(along.mesh.bbox.dimX).toBeCloseTo(0.811923, 5);
+		expect(along.mesh.bbox.dimY).toBeCloseTo(0.811923, 5);
+
+		const across = apply(gridPlane(6, 6), "Laplacian Smooth", {
 			stepSmoothNum: 20,
 			Boundary: false,
+			cotangentWeight: false,
 		});
-		// The outline should be exactly where it started.
-		expect(mesh.bbox.dimX).toBeCloseTo(1, 9);
-		expect(mesh.bbox.dimY).toBeCloseTo(1, 9);
+		expect(across.mesh.bbox.dimX).toBeCloseTo(0.343293, 5);
+		expect(across.mesh.bbox.dimY).toBeCloseTo(0.343293, 5);
 	});
 
 	test("smoothing never produces NaN", () => {

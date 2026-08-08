@@ -1,0 +1,25 @@
+{
+  "compare": "loose",
+  "filter": "meshing_repair_non_manifold_edges",
+  "input": "fan.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "method": {
+      "enum": "Remove Faces"
+    }
+  },
+  "summary": {
+    "area": 1.0,
+    "boundaryEdges": 4,
+    "boundaryLoops": 1,
+    "components": 1,
+    "en": 5,
+    "fn": 2,
+    "genus": 0,
+    "geometryHash": "29b3985709cfe0b7586f64945ea8d48c3e24dfe028f594ec01af4b65fe0568bc",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 6,
+    "volume": null
+  }
+}

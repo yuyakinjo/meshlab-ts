@@ -90,6 +90,123 @@ function accumulate(m: CMeshO, acc: LaplacianAccumulator, cotangentWeight: boole
 	}
 }
 
+/** Which face edges are borders, one bit per face corner, or null for none. */
+function borderEdgesOf(m: CMeshO): Uint8Array {
+	const flags = new Uint8Array(3 * m.faceSize);
+	const incidence = new Map<number, number>();
+	const stride = m.vertSize + 1;
+	const keyOf = (f: number, e: number): number => {
+		const a = m.faceVert[3 * f + e];
+		const b = m.faceVert[3 * f + ((e + 1) % 3)];
+		return a < b ? a * stride + b : b * stride + a;
+	};
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let e = 0; e < 3; e++) {
+			const key = keyOf(f, e);
+			incidence.set(key, (incidence.get(key) ?? 0) + 1);
+		}
+	}
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let e = 0; e < 3; e++) {
+			if (incidence.get(keyOf(f, e)) === 1) flags[3 * f + e] = 1;
+		}
+	}
+	return flags;
+}
+
+/**
+ * `vcg::tri::Smooth::AccumulateLaplacianInfo`, edge for edge.
+ *
+ * Three passes, and the order is the behaviour:
+ *
+ * 1. Every interior edge contributes its endpoints to each other, weighted by
+ *    the cotangent of the opposite corner when asked — **unclamped**, exactly
+ *    as VCG leaves it. An obtuse corner really does contribute a negative
+ *    weight there, and reproducing MeshLab means reproducing that.
+ * 2. Every border edge then *resets* its endpoints to `sum = P, cnt = 1`,
+ *    wiping whatever pass 1 accumulated into them.
+ * 3. Every border edge then adds its two endpoints to each other, unweighted.
+ *
+ * The net effect is that boundary vertices are smoothed along the boundary
+ * curve alone — a 1D Laplacian on the outline — while interior vertices see
+ * the full ring. Callers wanting MeshLab's "Boundary off" behaviour pass a
+ * zeroed border mask, which is what its `FaceClearB` amounts to.
+ */
+function accumulateVCG(
+	m: CMeshO,
+	acc: LaplacianAccumulator,
+	cotangentWeight: boolean,
+	borderEdges: Uint8Array,
+): void {
+	acc.sum.fill(0);
+	acc.count.fill(0);
+
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let e = 0; e < 3; e++) {
+			if (borderEdges[3 * f + e] === 1) continue;
+			const a = m.faceVert[3 * f + e];
+			const b = m.faceVert[3 * f + ((e + 1) % 3)];
+			let w = 1;
+			if (cotangentWeight) {
+				// VCG: weight = tan(pi/2 - angle at the opposite corner).
+				const c = m.faceVert[3 * f + ((e + 2) % 3)];
+				const ux = m.vx(a) - m.vx(c);
+				const uy = m.vy(a) - m.vy(c);
+				const uz = m.vz(a) - m.vz(c);
+				const vx = m.vx(b) - m.vx(c);
+				const vy = m.vy(b) - m.vy(c);
+				const vz = m.vz(b) - m.vz(c);
+				const dot = ux * vx + uy * vy + uz * vz;
+				const crossLen = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+				if (crossLen < 1e-300) continue;
+				w = dot / crossLen;
+				if (!Number.isFinite(w)) continue;
+			}
+			acc.sum[3 * a] += m.vx(b) * w;
+			acc.sum[3 * a + 1] += m.vy(b) * w;
+			acc.sum[3 * a + 2] += m.vz(b) * w;
+			acc.count[a] += w;
+			acc.sum[3 * b] += m.vx(a) * w;
+			acc.sum[3 * b + 1] += m.vy(a) * w;
+			acc.sum[3 * b + 2] += m.vz(a) * w;
+			acc.count[b] += w;
+		}
+	}
+
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let e = 0; e < 3; e++) {
+			if (borderEdges[3 * f + e] !== 1) continue;
+			for (const v of [m.faceVert[3 * f + e], m.faceVert[3 * f + ((e + 1) % 3)]]) {
+				acc.sum[3 * v] = m.vx(v);
+				acc.sum[3 * v + 1] = m.vy(v);
+				acc.sum[3 * v + 2] = m.vz(v);
+				acc.count[v] = 1;
+			}
+		}
+	}
+
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let e = 0; e < 3; e++) {
+			if (borderEdges[3 * f + e] !== 1) continue;
+			const a = m.faceVert[3 * f + e];
+			const b = m.faceVert[3 * f + ((e + 1) % 3)];
+			acc.sum[3 * a] += m.vx(b);
+			acc.sum[3 * a + 1] += m.vy(b);
+			acc.sum[3 * a + 2] += m.vz(b);
+			acc.count[a] += 1;
+			acc.sum[3 * b] += m.vx(a);
+			acc.sum[3 * b + 1] += m.vy(a);
+			acc.sum[3 * b + 2] += m.vz(a);
+			acc.count[b] += 1;
+		}
+	}
+}
+
 export interface SmoothOptions {
 	readonly smoothSelected?: boolean;
 	readonly cotangentWeight?: boolean;
@@ -98,8 +215,20 @@ export interface SmoothOptions {
 	 *
 	 * On an open mesh, smoothing the boundary pulls it inward and visibly
 	 * shrinks the outline, so a repair pipeline usually wants it pinned.
+	 * Used by the HC and scale-dependent variants; the plain Laplacian and
+	 * Taubin follow VCG's own boundary semantics instead — see
+	 * {@link accumulateVCG}.
 	 */
 	readonly pinBoundary?: boolean;
+	/**
+	 * MeshLab's "1D Boundary Smoothing" flag, for the plain Laplacian.
+	 *
+	 * On (the default): a boundary vertex is smoothed along the boundary curve
+	 * alone, exactly VCG's border handling. Off: MeshLab clears the border
+	 * flags first, so boundary vertices are averaged with all their neighbours
+	 * like interior ones — *not* pinned, which is the natural misreading.
+	 */
+	readonly boundary?: boolean;
 }
 
 /** One Laplacian step scaled by `delta`, into the mesh. */
@@ -150,8 +279,34 @@ function borderMaskOf(m: CMeshO, options: SmoothOptions): Uint8Array | null {
 export function vertexCoordLaplacian(m: CMeshO, step = 1, options: SmoothOptions = {}): void {
 	if (m.vn === 0) return;
 	const acc = newAccumulator(m.vertSize);
-	const border = borderMaskOf(m, options);
-	for (let i = 0; i < step; i++) laplacianStep(m, acc, 1, options, border);
+	// MeshLab's Boundary=false is FaceClearB: no edge counts as a border, so
+	// boundary vertices are smoothed like interior ones rather than pinned.
+	const borderEdges =
+		(options.boundary ?? true) ? borderEdgesOf(m) : new Uint8Array(3 * m.faceSize);
+	// pinBoundary is not a MeshLab behaviour — under no setting does MeshLab
+	// hold the outline still — but the internal builders (the spherical cap)
+	// relax an interior against a rim they have just placed, and that needs a
+	// genuine pin.
+	const pinned = borderMaskOf(m, options);
+	for (let i = 0; i < step; i++) {
+		accumulateVCG(m, acc, options.cotangentWeight ?? false, borderEdges);
+		for (let v = 0; v < m.vertSize; v++) {
+			if (m.isVertD(v) || acc.count[v] <= 0) continue;
+			if (options.smoothSelected === true && !m.isVertS(v)) continue;
+			if (pinned !== null && pinned[v] === 1) continue;
+			// The vertex takes part in its own average with weight one — the
+			// `(P + sum) / (cnt + 1)` of VCG, not the plain neighbourhood mean.
+			// The difference is roughly one part in valence per step, which is
+			// exactly what the differential tests measured before this matched.
+			const n = acc.count[v] + 1;
+			m.setVert(
+				v,
+				(m.vx(v) + acc.sum[3 * v]) / n,
+				(m.vy(v) + acc.sum[3 * v + 1]) / n,
+				(m.vz(v) + acc.sum[3 * v + 2]) / n,
+			);
+		}
+	}
 	m.imark++;
 }
 
@@ -173,10 +328,24 @@ export function vertexCoordTaubin(
 ): void {
 	if (m.vn === 0) return;
 	const acc = newAccumulator(m.vertSize);
-	const border = borderMaskOf(m, options);
+	const borderEdges = borderEdgesOf(m);
+	const half = (delta: number): void => {
+		accumulateVCG(m, acc, options.cotangentWeight ?? false, borderEdges);
+		for (let v = 0; v < m.vertSize; v++) {
+			if (m.isVertD(v) || acc.count[v] <= 0) continue;
+			if (options.smoothSelected === true && !m.isVertS(v)) continue;
+			const inv = 1 / acc.count[v];
+			m.setVert(
+				v,
+				m.vx(v) + delta * (acc.sum[3 * v] * inv - m.vx(v)),
+				m.vy(v) + delta * (acc.sum[3 * v + 1] * inv - m.vy(v)),
+				m.vz(v) + delta * (acc.sum[3 * v + 2] * inv - m.vz(v)),
+			);
+		}
+	};
 	for (let i = 0; i < step; i++) {
-		laplacianStep(m, acc, lambda, options, border);
-		laplacianStep(m, acc, mu, options, border);
+		half(lambda);
+		half(mu);
 	}
 	m.imark++;
 }

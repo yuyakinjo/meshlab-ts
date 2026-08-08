@@ -1,0 +1,25 @@
+{
+  "compare": "exact",
+  "filter": "compute_coord_by_function",
+  "input": "torus.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "x": "x+1",
+    "y": "y*2",
+    "z": "z-0.5"
+  },
+  "summary": {
+    "area": 82.89786529541016,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 864,
+    "fn": 576,
+    "genus": 1,
+    "geometryHash": "f850ef35674b79994b5ca955cdd5b5b55e089d211d590f41b64ba52906e27ac3",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 288,
+    "volume": 26.83435859622932
+  }
+}
