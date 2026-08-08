@@ -36,11 +36,14 @@ import {
 	type PostConditionBox,
 } from "../../common/plugins/interfaces/filter_plugin.ts";
 import type { CallBackPos } from "../../common/utilities/callback.ts";
-import { MLException } from "../../common/utilities/ml_exception.ts";
+import { MLException, MLNotImplementedException } from "../../common/utilities/ml_exception.ts";
 import { Allocator } from "../../vcg/complex/allocator.ts";
+import { Clean } from "../../vcg/complex/clean.ts";
 import type { CMeshO } from "../../vcg/complex/cmesho.ts";
+import { voronoiAtlas } from "../../vcg/complex/parametrization/voronoi_atlas.ts";
 import { UpdateBounding } from "../../vcg/complex/update/bounding.ts";
 import { UpdateNormal } from "../../vcg/complex/update/normal.ts";
+import { UpdateTopology } from "../../vcg/complex/update/topology.ts";
 import { blue, green, red, rgba } from "../../vcg/space/color4.ts";
 import { Image } from "../../vcg/space/image/image.ts";
 import { isPng, readPng, writePng } from "../../vcg/space/image/png.ts";
@@ -56,6 +59,7 @@ export const FP = {
 	FP_COLOR_TO_TEXTURE: 5,
 	FP_TRANSFER_TO_TEXTURE: 6,
 	FP_TEX_TO_VCOLOR_TRANSFER: 7,
+	FP_VORONOI_ATLAS: 8,
 } as const;
 
 /** What `Transfer: Vertex Attributes to Texture` can bake. */
@@ -151,6 +155,19 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		filterClass: FilterClass.VertexColoring | FilterClass.Texture,
 		preConditions: MeshElement.MM_NONE,
 		postCondition: MeshElement.MM_VERTCOLOR,
+	},
+	[FP.FP_VORONOI_ATLAS]: {
+		name: "Parametrization: Voronoi Atlas",
+		pythonName: "generate_voronoi_atlas_parametrization",
+		info:
+			"Build an atlased parametrization based on a geodesic voronoi partitioning of the surface " +
+			"and parametrizing each region using Harmonic Mapping. For the parametrization of the " +
+			"disk like voronoi regions the used method is: <br><b>Ulrich Pinkall, Konrad Polthier</b>" +
+			"<br><i>Computing Discrete Minimal Surfaces and Their Conjugates</i> <br>Experimental " +
+			"Mathematics, Vol 2 (1), 1993.",
+		filterClass: FilterClass.Texture,
+		preConditions: MeshElement.MM_FACENUMBER,
+		postCondition: MeshElement.MM_WEDGTEXCOORD,
 	},
 };
 
@@ -363,6 +380,28 @@ export class FilterTexture extends FilterPlugin {
 						description: "Max Dist Search",
 						tooltip:
 							"Sample points for which we do not find anything within this distance are rejected and left unchanged",
+					}),
+				);
+				break;
+
+			case FP.FP_VORONOI_ATLAS:
+				list.add(
+					new RichInt("regionNum", 10, {
+						description: "Approx. Region Num",
+						tooltip:
+							"An estimation of the number of regions that must be generated. Smaller regions " +
+							"could give a parametrization with smaller distortion.",
+					}),
+				);
+				list.add(
+					new RichBool("overlapFlag", false, {
+						description: "Overlap",
+						tooltip:
+							"If checked the resulting parametrization will be composed by <i>overlapping</i> " +
+							"regions, e.g. the resulting mesh will have duplicated faces: each region will " +
+							"have a ring of ovelapping duplicate faces that will ensure that border regions " +
+							"will be parametrized in the atlas twice. This is quite useful for building " +
+							"mipmap robust atlases",
 					}),
 				);
 				break;
@@ -607,6 +646,39 @@ export class FilterTexture extends FilterPlugin {
 						(missed > 0 ? `; ${missed} found nothing within ${upperBound}` : ""),
 				);
 				return { colored: coloured, missed };
+			}
+
+			case FP.FP_VORONOI_ATLAS: {
+				const m = doc.mm();
+				const cm = m.cm;
+				m.updateDataMask(MeshElement.MM_FACEFACETOPO | MeshElement.MM_WEDGTEXCOORD);
+				UpdateTopology.faceFace(cm);
+				if (Clean.countNonManifoldEdgeFF(cm) > 0 || Clean.countNonManifoldVertexFF(cm) > 0) {
+					throw new MLException("Mesh is not manifold, this filter requires manifoldness");
+				}
+				if (params.getBool("overlapFlag")) {
+					throw new MLNotImplementedException(
+						"Overlapping regions are not built yet; the atlas has no duplicated border ring, " +
+							"so mipmapping it may bleed between charts.",
+						"FilterTexture",
+					);
+				}
+				const result = voronoiAtlas(cm, params.getInt("regionNum"));
+				if (result.failed > 0) {
+					doc.Log.warning(
+						`${result.failed} regions covering ${result.failedFaces} faces were not disks and ` +
+							"fell back to a per-triangle layout: those faces are parametrized but not " +
+							"continuous, so a texture baked there will not filter across them.",
+					);
+				}
+				m.updateBoxAndNormals();
+				post.mask = MeshElement.MM_WEDGTEXCOORD;
+				doc.Log.log(`Built an atlas of ${result.regions} charts`);
+				return {
+					region_number: result.regions,
+					failed_regions: result.failed,
+					failed_faces: result.failedFaces,
+				};
 			}
 
 			default:

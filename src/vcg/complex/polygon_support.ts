@@ -85,7 +85,9 @@ export function meshFromPolygons(
 	const out = new CMeshO();
 	if (positions.length === 0) return out;
 	Allocator.addVertices(out, positions.length);
-	positions.forEach((p, i) => out.setVert(i, p[0], p[1], p[2]));
+	positions.forEach((p, i) => {
+		out.setVert(i, p[0], p[1], p[2]);
+	});
 
 	let faceCount = 0;
 	for (const ring of polygons) faceCount += Math.max(0, ring.length - 2);

@@ -10,14 +10,14 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 265 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 267 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
 - **filter_clean** (15, complete) — welding, degenerate and duplicate removal, isolated pieces,
   non-manifold edge and vertex repair, T-vertices, removal by quality, wedge-UV merging,
   mismatched-border snapping, and ball-pivoting surface reconstruction
-- **filter_meshing** (36 of 37) — re-orientation, hole closing, QEM decimation, the transform
+- **filter_meshing** (37, complete) — re-orientation, hole closing, QEM decimation, the transform
   family (scale, centre, rotate, freeze, reset, explicit matrix, translation/rotation/scale,
   inversion, axis flip and swap, principal-axis alignment, rotate-to-fit-a-plane), point-cloud
   normal estimation and smoothing, Loop/Butterfly/midpoint subdivision, isotropic explicit
@@ -46,10 +46,10 @@ printable solid, and to go from a raw point cloud to a watertight surface:
   colouring
 - **filter_qhull** (4, complete) — convex hull, alpha complex and alpha shape, Voronoi filtering,
   and hidden-point removal, over a quickhull and a Bowyer-Watson Delaunay tetrahedralization
-  written here rather than linked from Qhull
+  written here rather than linked from Qhull, and a seam-preserving textured decimation
 - **filter_screened_poisson** (1) — Screened Poisson surface reconstruction
-- **filter_texture** (8 of 9) — per-vertex/per-wedge UV conversion with seam splitting, flat-plane
-  and trivial per-triangle parametrisation, texture assignment, and baking vertex colour, normals,
+- **filter_texture** (9, complete) — per-vertex/per-wedge UV conversion with seam splitting,
+  flat-plane, trivial per-triangle and Voronoi-atlas parametrisation, texture assignment, and baking vertex colour, normals,
   quality or another mesh's texture into a texture map
 - **filter_embree** (5) — the ray-traced measures under the names a script written against Embree
   uses, plus geometric face re-orientation and visible-face selection
@@ -348,6 +348,20 @@ of truth for filter names and parameter defaults. No code is copied from it.
   collapses, flattens the smaller star *reusing the first one's boundary layout* so the two share
   a coordinate system, and re-pins. A collapse that would strand a pin, or that folds the star
   when flattened, is undone rather than approximated.
+- **Textured decimation guards the seams instead of extending the quadric.** MeshLab's
+  `Quadric Edge Collapse Decimation (with texture)` carries a 5-dimensional quadric, weighting the
+  UV coordinates against the geometry through its `Extratcoordw` parameter. Here the collapse keeps
+  the ordinary 3D quadric and instead *refuses* any collapse touching a UV seam, interpolating the
+  surviving vertex's coordinates along the collapsed edge. The result preserves the
+  parametrisation exactly rather than approximately, at the cost of decimating a little less near
+  a seam; `Extratcoordw` is accepted and warned about rather than silently ignored.
+- **A Voronoi chart that will not flatten still gets real coordinates.** `Parametrization: Voronoi
+  Atlas` partitions the mesh geodesically and flattens each region as a disk, but a region is not
+  guaranteed to *be* a disk. Rather than leave such a region's coordinates untouched — which looks
+  like a working parametrisation while collapsing the whole chart onto one texel — its faces fall
+  back to a per-triangle layout inside the region's own cell, and the filter reports how many
+  regions and faces took that path. Upstream's `overlapFlag`, which duplicates a border ring for
+  bleeding, is not implemented and throws.
 - **Two flattening weights, because neither one wins.** `parametrization/harmonic.ts` offers mean
   value and cotangent weights for mapping a disk into the plane. Mean value weights are always
   positive, so Tutte's theorem applies and the result can never fold; cotangent weights minimise

@@ -40,6 +40,7 @@ import { FaceFlag, VertexFlag } from "../../vcg/complex/flags.ts";
 import { Hole } from "../../vcg/complex/hole.ts";
 import { Inertia } from "../../vcg/complex/inertia.ts";
 import { IsotropicRemeshing } from "../../vcg/complex/isotropic_remeshing.ts";
+import { quadricTexSimplification } from "../../vcg/complex/local_optimization/quadric_tex.ts";
 import {
 	defaultQuadricParameters,
 	quadricSimplification,
@@ -93,6 +94,7 @@ export const FP = {
 	FP_REFINE_CATMULL: 33,
 	FP_REFINE_DOOSABIN: 34,
 	FP_QUAD_PAIRING: 35,
+	FP_QUADRIC_TEXCOORD_SIMPLIFICATION: 36,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -361,6 +363,19 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 			"mesh if the original one had borders.",
 		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
 		requirements: MeshElement.MM_FACEQUALITY | MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_QUADRIC_TEXCOORD_SIMPLIFICATION]: {
+		name: "Simplification: Quadric Edge Collapse Decimation (with texture)",
+		pythonName: "meshing_decimation_quadric_edge_collapse_with_texture",
+		info:
+			"Simplify a textured mesh using a Quadric based Edge Collapse Strategy preserving UV " +
+			"parametrization; better than clustering but slower.",
+		filterClass: FilterClass.Remeshing,
+		// Deliberately not requiring MM_WEDGTEXCOORD, for the third time in this
+		// codebase: the framework would allocate zeroed coordinates for a mesh
+		// that has none, and the filter would then "preserve" a parametrization
+		// that never existed. Asking for the channel itself lets it say so.
+		requirements: MeshElement.MM_NONE,
 	},
 	[FP.FP_QUAD_PAIRING]: {
 		name: "Tri to Quad by smart triangle pairing",
@@ -746,6 +761,7 @@ export class FilterMeshing extends FilterPlugin {
 				break;
 			}
 
+			case FP.FP_QUADRIC_TEXCOORD_SIMPLIFICATION:
 			case FP.FP_QUADRIC_SIMPLIFICATION: {
 				const faces = m === undefined ? 0 : m.cm.fn;
 				let selectedFaces = 0;
@@ -831,6 +847,17 @@ export class FilterMeshing extends FilterPlugin {
 							"simplification of the planar portion of the mesh.",
 					}),
 				);
+				if (id === FP.FP_QUADRIC_TEXCOORD_SIMPLIFICATION) {
+					list.add(
+						new RichFloat("Extratcoordw", 1, {
+							description: "Texture Weight",
+							tooltip:
+								"Additional weight for each extra Texture Coordinates for every (selected) vertex. " +
+								"Ignored by this implementation, which keeps the parametrization valid rather " +
+								"than trading its distortion against the geometric error; see the filter's notes.",
+						}),
+					);
+				}
 				list.add(
 					new RichFloat("PlanarWeight", d.qualityQuadricWeight, {
 						description: "Planar Simp. Weight",
@@ -1541,13 +1568,30 @@ export class FilterMeshing extends FilterPlugin {
 				return { min_value: min, max_value: max };
 			}
 
+			case FP.FP_QUADRIC_TEXCOORD_SIMPLIFICATION:
 			case FP.FP_QUADRIC_SIMPLIFICATION: {
+				const textured = id === FP.FP_QUADRIC_TEXCOORD_SIMPLIFICATION;
+				if (textured) {
+					if (cm.wedgeTexCoord === null) {
+						throw new MLException(
+							"This filter needs per-wedge texture coordinates, which this mesh does not carry.",
+						);
+					}
+					if (params.getFloat("Extratcoordw") !== 1) {
+						doc.Log.warning(
+							"Texture Weight is ignored: this implementation keeps the parametrization valid " +
+								"and never crosses a seam, rather than trading UV distortion against geometric " +
+								"error the way a five-dimensional quadric would.",
+						);
+					}
+				}
 				const perc = params.getFloat("TargetPerc");
 				const targetFaceNum =
 					perc !== 0 ? Math.round(cm.fn * perc) : params.getInt("TargetFaceNum");
 
 				const before = cm.fn;
-				const result = quadricSimplification(cm, {
+				const decimate = textured ? quadricTexSimplification : quadricSimplification;
+				const result = decimate(cm, {
 					targetFaceNum,
 					selected: params.getBool("Selected"),
 					callback: _cb,

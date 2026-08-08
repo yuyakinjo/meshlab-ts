@@ -789,31 +789,20 @@ describe("Transfer between meshes", () => {
 });
 
 describe("registry", () => {
-	test("the eight implemented ones are under FilterTexture", () => {
-		for (const name of [
-			"Convert PerWedge UV into PerVertex UV",
-			"Convert PerVertex UV into PerWedge UV",
-			"Parametrization: Trivial Per-Triangle",
-			"Parametrization: Flat Plane",
-			"Set Texture",
-			"Transfer: Vertex Color to Texture",
-			"Transfer: Vertex Attributes to Texture (1 or 2 meshes)",
-			"Transfer: Texture to Vertex Color (1 or 2 meshes)",
-		]) {
-			const action = kernel.pluginManager.filterAction(name);
-			expect(action, name).toBeDefined();
-			expect(action?.plugin.pluginName(), name).toBe("FilterTexture");
+	// Derived rather than listed: a hand-written list of names goes stale the
+	// moment a filter lands, and it goes stale *silently* by continuing to pass.
+	const actions = kernel.filterList().filter((f) => f.plugin.pluginName() === "FilterTexture");
+
+	test("every FilterTexture filter is implemented", () => {
+		expect(actions.length).toBe(9);
+		for (const action of actions) {
+			expect(action.implemented, action.name).toBe(true);
 		}
 	});
 
-	test("Voronoi Atlas is still registered, and fails loudly", () => {
-		const action = kernel.pluginManager.filterAction("Parametrization: Voronoi Atlas");
-		expect(action).toBeDefined();
-		const { doc } = scene(gridPlane(2, 2).mesh);
-		// Registered but unimplemented: it must throw rather than quietly do
-		// nothing, which is the whole point of the stub registry.
-		expect(() => kernel.applyFilter(doc, "Parametrization: Voronoi Atlas", {})).toThrow(
-			/not implemented/i,
-		);
+	test("each one has a python name", () => {
+		for (const action of actions) {
+			expect(action.pythonName, action.name).toMatch(/^[a-z][a-z0-9_]*$/);
+		}
 	});
 });

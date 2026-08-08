@@ -140,7 +140,9 @@ export function catmullClark(m: CMeshO): CMeshO {
 	};
 	for (const [v, point] of moved) indexOfMoved.set(v, claim(point));
 	for (const [key, point] of edgePoint) indexOfEdge.set(key, claim(point));
-	facePoint.forEach((point, f) => indexOfFace.set(f, claim(point)));
+	facePoint.forEach((point, f) => {
+		indexOfFace.set(f, claim(point));
+	});
 
 	const out: Polygon[] = [];
 	polygons.forEach((ring, f) => {
@@ -201,7 +203,9 @@ export function dooSabin(m: CMeshO): CMeshO {
 	// Where each (vertex, face) corner is, and which corners each edge has.
 	const cornerAt = new Map<string, number>();
 	polygons.forEach((ring, f) => {
-		ring.forEach((v, i) => cornerAt.set(`${f}_${v}`, spawned[f][i]));
+		ring.forEach((v, i) => {
+			cornerAt.set(`${f}_${v}`, spawned[f][i]);
+		});
 	});
 	const facesOfEdge = new Map<string, number[]>();
 	polygons.forEach((ring, f) => {

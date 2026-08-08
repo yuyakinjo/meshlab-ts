@@ -97,6 +97,20 @@ export interface DecimateOptions {
 	readonly selected?: boolean;
 	/** Called with progress in 0..100; return false to stop. */
 	readonly callback?: (pos: number, message: string) => boolean;
+	/**
+	 * Veto a collapse the caller wants to forbid for reasons the quadric knows
+	 * nothing about — a texture seam, say, where merging the two vertices would
+	 * make the parametrisation inconsistent however small the geometric error.
+	 */
+	readonly canCollapse?: (u: number, v: number) => boolean;
+	/**
+	 * Called after each accepted collapse, with the survivor, the vertex that
+	 * went away, and where along the edge the survivor landed.
+	 *
+	 * The hook for attributes that have to follow the geometry: `t` is 0 at the
+	 * survivor's old position and 1 at the removed vertex's.
+	 */
+	readonly onCollapse?: (survivor: number, removed: number, t: number) => void;
 }
 
 export interface DecimateResult extends OptimizationResult {
@@ -201,6 +215,10 @@ export function quadricSimplification(m: CMeshO, options: DecimateOptions): Deci
 			discarded++;
 			continue;
 		}
+		if (options.canCollapse !== undefined && !options.canCollapse(entry.u, entry.v)) {
+			discarded++;
+			continue;
+		}
 		if (
 			!isFeasible(
 				m,
@@ -218,6 +236,22 @@ export function quadricSimplification(m: CMeshO, options: DecimateOptions): Deci
 			continue;
 		}
 
+		// Where the survivor lands along the old edge, for the attribute hook.
+		let t = 0;
+		if (options.onCollapse !== undefined) {
+			const dx = m.vx(entry.v) - m.vx(entry.u);
+			const dy = m.vy(entry.v) - m.vy(entry.u);
+			const dz = m.vz(entry.v) - m.vz(entry.u);
+			const len2 = dx * dx + dy * dy + dz * dz;
+			t =
+				len2 === 0
+					? 0
+					: ((entry.x - m.vx(entry.u)) * dx +
+							(entry.y - m.vy(entry.u)) * dy +
+							(entry.z - m.vz(entry.u)) * dz) /
+						len2;
+			options.onCollapse(entry.u, entry.v, Math.min(1, Math.max(0, t)));
+		}
 		const touched = collapseEdge(m, vertFaces, entry.u, entry.v, entry.x, entry.y, entry.z);
 		quadricAdd(quadrics, entry.u, entry.v);
 		version[entry.u]++;
