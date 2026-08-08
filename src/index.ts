@@ -264,5 +264,11 @@ export { Box3 } from "./vcg/space/box3.ts";
 export { Color4 } from "./vcg/space/color4.ts";
 export { Image } from "./vcg/space/image/image.ts";
 export { isPng, readPng, writePng } from "./vcg/space/image/png.ts";
+export {
+	BVH,
+	coneDirections,
+	cosineHemisphere,
+	type RayHit,
+} from "./vcg/space/index/bvh.ts";
 export { KdTree, pointBounds } from "./vcg/space/index/kdtree.ts";
 export { closestOnTriangle, type Hit, SurfaceLookup } from "./vcg/space/index/surface_lookup.ts";

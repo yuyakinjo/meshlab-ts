@@ -14,6 +14,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { createStubPlugins } from "../meshlabplugins/_stub/stub_plugins.ts";
+import { FilterAmbientOcclusion } from "../meshlabplugins/filter_ao/filter_ao.ts";
 import { FilterClean } from "../meshlabplugins/filter_clean/filter_clean.ts";
 import { FilterColorProc } from "../meshlabplugins/filter_colorproc/filter_colorproc.ts";
 import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
@@ -21,6 +22,7 @@ import { FilterCreateIso } from "../meshlabplugins/filter_createiso/filter_creat
 import { FilterFractal } from "../meshlabplugins/filter_fractal/filter_fractal.ts";
 import { FilterFunc } from "../meshlabplugins/filter_func/filter_func.ts";
 import { FilterGeodesic } from "../meshlabplugins/filter_geodesic/filter_geodesic.ts";
+import { FilterICP } from "../meshlabplugins/filter_icp/filter_icp.ts";
 import { FilterIsoParametrization } from "../meshlabplugins/filter_isoparametrization/filter_isoparametrization.ts";
 import { FilterLayer } from "../meshlabplugins/filter_layer/filter_layer.ts";
 import { FilterMeasure } from "../meshlabplugins/filter_measure/filter_measure.ts";
@@ -31,6 +33,7 @@ import { FilterQuality } from "../meshlabplugins/filter_quality/filter_quality.t
 import { FilterSample } from "../meshlabplugins/filter_sample/filter_sample.ts";
 import { FilterSampling } from "../meshlabplugins/filter_sampling/filter_sampling.ts";
 import { FilterScreenedPoisson } from "../meshlabplugins/filter_screened_poisson/filter_screened_poisson.ts";
+import { FilterSDF } from "../meshlabplugins/filter_sdfgpu/filter_sdfgpu.ts";
 import { FilterSelect } from "../meshlabplugins/filter_select/filter_select.ts";
 import { FilterTexture } from "../meshlabplugins/filter_texture/filter_texture.ts";
 import { FilterTriOptimize } from "../meshlabplugins/filter_trioptimize/filter_trioptimize.ts";
@@ -63,6 +66,9 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterFractal(),
 	() => new FilterCreateIso(),
 	() => new FilterVoronoi(),
+	() => new FilterAmbientOcclusion(),
+	() => new FilterSDF(),
+	() => new FilterICP(),
 	() => new FilterTriOptimize(),
 	() => new FilterParametrization(),
 	() => new FilterQuality(),
