@@ -56,14 +56,33 @@ export class SparseMatrix {
 	 * gradients requires and which simply zeroing the row would break.
 	 */
 	pin(index: number, value: number, rhs: Float64Array): void {
+		this.pinMulti(index, [value], [rhs]);
+	}
+
+	/**
+	 * {@link pin}, for several right-hand sides sharing one matrix.
+	 *
+	 * Pinning is destructive: it clears the row and column it eliminates. So
+	 * calling `pin` twice on the same matrix — once per coordinate, say —
+	 * quietly does nothing the second time, because the entries whose
+	 * contribution it would move to the right-hand side are already gone.
+	 * Anything solving for more than one unknown per vertex against a single
+	 * matrix has to pin them together.
+	 */
+	pinMulti(index: number, values: readonly number[], rhs: readonly Float64Array[]): void {
+		if (values.length !== rhs.length) {
+			throw new Error(
+				`pinMulti needs one value per right-hand side, got ${values.length} and ${rhs.length}`,
+			);
+		}
 		for (const [c, v] of this.rows[index]) {
 			if (c === index) continue;
-			rhs[c] -= v * value;
+			for (let k = 0; k < rhs.length; k++) rhs[k][c] -= v * values[k];
 			this.rows[c].delete(index);
 		}
 		this.rows[index].clear();
 		this.rows[index].set(index, 1);
-		rhs[index] = value;
+		for (let k = 0; k < rhs.length; k++) rhs[k][index] = values[k];
 	}
 
 	/** The diagonal, for Jacobi preconditioning. */

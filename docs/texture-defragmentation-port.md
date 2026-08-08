@@ -86,7 +86,16 @@ running at, not one.
 Each stage is independently testable, so a stall at any point still leaves
 working, tested code rather than a half-filter.
 
-**Stage A — the self-contained mathematics.** `matching.ts`, `intersection2.ts`,
+**Stage A — the self-contained mathematics. Done.** `math/mat2.ts`,
+`space/intersection2.ts`, `parametrization/matching2.ts`,
+`parametrization/arap2d.ts`, with 29 tests. Two things worth recording from it:
+the three matching fits all collapse to one closed-form 2×2 polar
+decomposition, so upstream's three separate Eigen paths became one function;
+and `SparseMatrix.pin` turned out to be unusable twice on one matrix, which is
+exactly what a two-coordinate solve needs — `pinMulti` now does both at once,
+and the old failure mode was silent.
+
+**Stage A (as planned) —** `matching.ts`, `intersection2.ts`,
 `arap2d.ts`. These have the crispest invariants in the whole port: a matching fit
 must recover a known similarity transform *exactly* from noiseless points; ARAP
 energy must decrease monotonically and be exactly zero on a map that is already
