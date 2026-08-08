@@ -245,9 +245,240 @@ export function makePureByRefine(m: CMeshO): { quads: number; triangles: number 
 	return { quads, triangles };
 }
 
+/** The index of a face's single hidden edge, or -1 when it has none. */
+function fauxIndex(m: CMeshO, f: number): number {
+	for (let e = 0; e < 3; e++) if (isFaux(m, f, e)) return e;
+	return -1;
+}
+
+/**
+ * Flips the hidden diagonal of the quad containing `f`, then re-hides whichever
+ * edge the two halves now share.
+ *
+ * The quad keeps its four corners and its identity; only which diagonal splits
+ * it changes. That is what lets the pairing search reshape the mesh without
+ * adding or removing anything.
+ */
+function flipDiagonal(m: CMeshO, f: number): boolean {
+	const faux = fauxIndex(m, f);
+	if (faux < 0) return false;
+	const g = m.ffp(f, faux);
+	if (g === f || m.isFaceD(g)) return false;
+	if (!flipDiagonalEdge(m, f, faux)) return false;
+
+	faceFace(m);
+	m.faceFlags[f] &= ~FaceFlag.FAUX012;
+	m.faceFlags[g] &= ~FaceFlag.FAUX012;
+	for (let e = 0; e < 3; e++) {
+		if (m.ffp(f, e) === g) setFaux(m, f, e);
+		if (m.ffp(g, e) === f) setFaux(m, g, e);
+	}
+	return true;
+}
+
+/** The bare index rewrite of an edge flip; the caller rebuilds adjacency. */
+function flipDiagonalEdge(m: CMeshO, f: number, e: number): boolean {
+	if (m.isBorderFF(f, e)) return false;
+	const g = m.ffp(f, e);
+	const ge = m.ffi(f, e);
+	if (g === f) return false;
+	const a = m.fv(f, e);
+	const b = m.fv(f, (e + 1) % 3);
+	const cf = m.fv(f, (e + 2) % 3);
+	const cg = m.fv(g, (ge + 2) % 3);
+	if (cf === cg) return false;
+	// The new edge must not already exist, or the mesh becomes non-manifold.
+	for (let h = 0; h < m.faceSize; h++) {
+		if (m.isFaceD(h) || h === f || h === g) continue;
+		for (let k = 0; k < 3; k++) {
+			const p = m.fv(h, k);
+			const q = m.fv(h, (k + 1) % 3);
+			if ((p === cf && q === cg) || (p === cg && q === cf)) return false;
+		}
+	}
+	m.setFace(f, cf, a, cg);
+	m.setFace(g, cg, b, cf);
+	return true;
+}
+
+/** Edge-distance from `from` to every reachable face, or -1. */
+function faceDistances(m: CMeshO, from: number, maxDistance: number): Int32Array {
+	const dist = new Int32Array(m.faceSize).fill(-1);
+	dist[from] = 0;
+	let frontier = [from];
+	for (let d = 1; d <= maxDistance && frontier.length > 0; d++) {
+		const next: number[] = [];
+		for (const f of frontier) {
+			for (let e = 0; e < 3; e++) {
+				if (m.isBorderFF(f, e)) continue;
+				const g = m.ffp(f, e);
+				if (m.isFaceD(g) || dist[g] >= 0) continue;
+				dist[g] = d;
+				next.push(g);
+			}
+		}
+		frontier = next;
+	}
+	return dist;
+}
+
+/**
+ * Makes the mesh pure quads by flipping edges, adding nothing.
+ *
+ * Two unpaired triangles cannot always be joined directly — they may be far
+ * apart, with quads in between. The trick is that a quad's diagonal can be
+ * flipped, which moves the "unpaired" state one quad along: the near half of
+ * the quad marries the lonely triangle and the far half becomes lonely in its
+ * turn. Repeat and the two lonely triangles walk toward each other until they
+ * meet.
+ *
+ * This is an augmenting-path matching in disguise, and it inherits the same
+ * limit: an odd number of faces has no perfect matching whatever the
+ * connectivity, so at least one triangle must always be left. Returns whether
+ * it managed to pair everything.
+ */
+/**
+ * Splits one border face so the face count becomes even.
+ *
+ * Pairing consumes two faces at a time, so an odd count can never be perfectly
+ * matched. Splitting a border edge in two costs one extra face and fixes the
+ * parity. A closed mesh with an odd face count cannot be helped this way and is
+ * left alone — there is no border edge to split.
+ */
+export function makeTriEvenBySplit(m: CMeshO): boolean {
+	if (m.fn % 2 === 0) return false;
+	if (m.ffFace === null) faceFace(m);
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let e = 0; e < 3; e++) {
+			if (!m.isBorderFF(f, e)) continue;
+			const a = m.fv(f, e);
+			const b = m.fv(f, (e + 1) % 3);
+			const c = m.fv(f, (e + 2) % 3);
+			const mid = Allocator.addVertices(m, 1);
+			m.setVert(mid, (m.vx(a) + m.vx(b)) / 2, (m.vy(a) + m.vy(b)) / 2, (m.vz(a) + m.vz(b)) / 2);
+			const extra = Allocator.addFaces(m, 1);
+			m.setFace(f, a, mid, c);
+			m.setFace(extra, mid, b, c);
+			m.faceFlags[extra] &= ~FaceFlag.FAUX012;
+			faceFace(m);
+			return true;
+		}
+	}
+	return false;
+}
+
+export function makePureByFlip(m: CMeshO, maxDistance = 10000): boolean {
+	if (m.ffFace === null) faceFace(m);
+	const lonely = (): number => {
+		for (let f = 0; f < m.faceSize; f++) {
+			if (!m.isFaceD(f) && !anyFaux(m, f)) return f;
+		}
+		return -1;
+	};
+
+	// Bounded because each successful round removes two lonely triangles, and
+	// a failed one gives up on that triangle for good.
+	const abandoned = new Set<number>();
+	for (let round = 0; round < m.faceSize + 1; round++) {
+		let ta = -1;
+		for (let f = 0; f < m.faceSize; f++) {
+			if (!m.isFaceD(f) && !anyFaux(m, f) && !abandoned.has(f)) {
+				ta = f;
+				break;
+			}
+		}
+		if (ta < 0) break;
+
+		const dist = faceDistances(m, ta, maxDistance);
+		let tb = -1;
+		let best = Number.POSITIVE_INFINITY;
+		for (let f = 0; f < m.faceSize; f++) {
+			if (f === ta || m.isFaceD(f) || anyFaux(m, f) || dist[f] < 0) continue;
+			if (dist[f] < best) {
+				best = dist[f];
+				tb = f;
+			}
+		}
+		if (tb < 0) {
+			abandoned.add(ta);
+			continue;
+		}
+		if (!walkTogether(m, ta, tb, dist)) abandoned.add(ta);
+	}
+	return lonely() < 0;
+}
+
+/**
+ * Walks `tb`'s loneliness along the quads toward `ta` until the two meet.
+ *
+ * Each step: find the neighbouring quad that is closer to `ta`, flip its
+ * diagonal if the half facing `tb` is not the one that should marry it, pair
+ * `tb` with that near half, and continue from the far half.
+ */
+function walkTogether(m: CMeshO, ta: number, tb: number, dist: Int32Array): boolean {
+	let current = tb;
+	for (let guard = 0; guard <= dist.length; guard++) {
+		// Adjacent to another lonely triangle? Then simply marry it.
+		for (let e = 0; e < 3; e++) {
+			if (m.isBorderFF(current, e)) continue;
+			const g = m.ffp(current, e);
+			if (m.isFaceD(g) || anyFaux(m, g) || g === current) continue;
+			setFaux(m, current, e);
+			setFaux(m, g, m.ffi(current, e));
+			return true;
+		}
+
+		// Otherwise step through the quad that gets closest to `ta`.
+		let bestEdge = -1;
+		let bestDist = dist[current] < 0 ? Number.POSITIVE_INFINITY : dist[current];
+		for (let e = 0; e < 3; e++) {
+			if (m.isBorderFF(current, e)) continue;
+			const g = m.ffp(current, e);
+			if (m.isFaceD(g) || dist[g] < 0) continue;
+			if (dist[g] < bestDist) {
+				bestDist = dist[g];
+				bestEdge = e;
+			}
+		}
+		if (bestEdge < 0) return false;
+
+		const near = m.ffp(current, bestEdge);
+		const nearFaux = fauxIndex(m, near);
+		if (nearFaux < 0) return false;
+		// The quad's far half is the one across its hidden diagonal. If the
+		// diagonal separates `current` from the wrong half, flip it first.
+		let far = m.ffp(near, nearFaux);
+		if (far === ta || dist[far] > dist[near]) {
+			if (!flipDiagonal(m, near)) return false;
+			const flipped = fauxIndex(m, near);
+			if (flipped < 0) return false;
+			far = m.ffp(near, flipped);
+		}
+		if (far === near || m.isFaceD(far)) return false;
+
+		// Dissolve the quad and re-pair its near half with `current`.
+		m.faceFlags[near] &= ~FaceFlag.FAUX012;
+		m.faceFlags[far] &= ~FaceFlag.FAUX012;
+		faceFace(m);
+		let joined = -1;
+		for (let e = 0; e < 3; e++) {
+			if (m.ffp(current, e) === near) joined = e;
+		}
+		if (joined < 0) return false;
+		setFaux(m, current, joined);
+		setFaux(m, near, m.ffi(current, joined));
+		current = far;
+		if (current === ta) return true;
+	}
+	return false;
+}
+
 export const BitQuadCreation = {
 	isTriQuadOnly,
 	quadQuality,
 	makeDominant,
 	makePureByRefine,
+	makePureByFlip,
+	makeTriEvenBySplit,
 } as const;

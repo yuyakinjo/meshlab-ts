@@ -92,6 +92,7 @@ export const FP = {
 	FP_VATTR_SEAM: 32,
 	FP_REFINE_CATMULL: 33,
 	FP_REFINE_DOOSABIN: 34,
+	FP_QUAD_PAIRING: 35,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -358,6 +359,16 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 			"Convert a tri-mesh into a quad mesh by applying a 4-8 subdivision scheme. It introduces " +
 			"less overhead than the plain Catmull-Clark, but the resulting mesh is not a pure quad " +
 			"mesh if the original one had borders.",
+		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
+		requirements: MeshElement.MM_FACEQUALITY | MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_QUAD_PAIRING]: {
+		name: "Tri to Quad by smart triangle pairing",
+		pythonName: "meshing_tri_to_quad_by_smart_triangle_pairing",
+		info:
+			"Convert a tri mesh into a quad mesh by pairing triangles, adding no vertices: where two " +
+			"lonely triangles cannot be joined directly, the diagonals of the quads between them are " +
+			"flipped until they meet.",
 		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
 		requirements: MeshElement.MM_FACEQUALITY | MeshElement.MM_FACEFACETOPO,
 	},
@@ -1839,6 +1850,33 @@ export class FilterMeshing extends FilterPlugin {
 					`Refined into ${result.quads} quads and ${result.triangles} leftover triangles`,
 				);
 				return { quad_number: result.quads, triangle_number: result.triangles };
+			}
+
+			case FP.FP_QUAD_PAIRING: {
+				m.updateDataMask(MeshElement.MM_FACEQUALITY | MeshElement.MM_FACEFACETOPO);
+				UpdateTopology.faceFace(cm);
+				if (Clean.countNonManifoldEdgeFF(cm) > 0) {
+					throw new MLException(
+						"Mesh has some not 2-manifold faces, this filter requires manifoldness",
+					);
+				}
+				const split = BitQuadCreation.makeTriEvenBySplit(cm);
+				BitQuadCreation.makeDominant(cm, 1);
+				const pure = BitQuadCreation.makePureByFlip(cm, 100);
+				const quads = countBitQuads(cm);
+				if (!pure) {
+					doc.Log.warning(
+						`Could not pair every triangle: ${cm.fn - 2 * quads} were left over. An odd face ` +
+							"count on a closed mesh cannot be paired at all, and a very long search may need " +
+							"a larger radius.",
+					);
+				}
+				m.updateDataMask(MeshElement.MM_POLYGONAL);
+				m.updateBoxAndNormals();
+				doc.Log.log(
+					`Paired ${quads} quads${split ? " after splitting one border face for parity" : ""}`,
+				);
+				return { quad_number: quads, triangle_number: cm.fn - 2 * quads, pure };
 			}
 
 			case FP.FP_QUAD_DOMINANT: {

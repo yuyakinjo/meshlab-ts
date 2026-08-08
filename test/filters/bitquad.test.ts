@@ -21,6 +21,7 @@ import { MeshLabKernel } from "../../src/common/meshlab_kernel.ts";
 import { MeshDocument } from "../../src/common/ml_document/mesh_document.ts";
 import { MeshElement } from "../../src/common/ml_document/mesh_element.ts";
 import { MLException } from "../../src/common/utilities/ml_exception.ts";
+import { Allocator } from "../../src/vcg/complex/allocator.ts";
 import { AttributeSeam } from "../../src/vcg/complex/attribute_seam.ts";
 import {
 	countBitQuads,
@@ -30,7 +31,7 @@ import {
 } from "../../src/vcg/complex/bit_quad.ts";
 import { BitQuadCreation } from "../../src/vcg/complex/bitquad_creation.ts";
 import { Clean } from "../../src/vcg/complex/clean.ts";
-import type { CMeshO } from "../../src/vcg/complex/cmesho.ts";
+import { CMeshO } from "../../src/vcg/complex/cmesho.ts";
 import { AlgebraicSphere } from "../../src/vcg/complex/refine.ts";
 import { UpdateTopology } from "../../src/vcg/complex/update/topology.ts";
 import { rgba } from "../../src/vcg/space/color4.ts";
@@ -374,5 +375,85 @@ describe("Vertex Attribute Seam", () => {
 	test("the splitter alone reports nothing to do on an empty mask", () => {
 		const cm = cube(1).mesh;
 		expect(AttributeSeam.splitVertexBySeam(cm, {})).toBe(0);
+	});
+});
+
+// ------------------------------------------------------ smart pairing
+
+describe("Tri to Quad by smart triangle pairing", () => {
+	test("reaches a pure quad mesh where greedy pairing cannot", () => {
+		// Greedy pairing always leaves triangles on a sphere; flipping the
+		// diagonals between two lonely triangles lets them walk together, and
+		// the result is a perfect matching: exactly half as many quads as faces.
+		for (const mesh of [cube(1).mesh, sphereIcosa(2).mesh, sphereIcosa(3).mesh]) {
+			const { doc, cm } = docWith(mesh, MeshElement.MM_FACEQUALITY);
+			const faces = cm.fn;
+			const out = kernel.applyFilter(doc, "Tri to Quad by smart triangle pairing");
+			expect(out.pure).toBe(true);
+			expect(out.quad_number).toBe(faces / 2);
+			expect(out.triangle_number).toBe(0);
+		}
+	});
+
+	test("works on a bordered mesh too", () => {
+		const { doc, cm } = docWith(gridPlane(5, 5).mesh, MeshElement.MM_FACEQUALITY);
+		const faces = cm.fn;
+		const out = kernel.applyFilter(doc, "Tri to Quad by smart triangle pairing");
+		expect(out.pure).toBe(true);
+		expect(out.quad_number).toBe(faces / 2);
+	});
+
+	test("adds no vertex, unlike the refining route", () => {
+		// The distinction between the two tri-to-quad filters: this one only
+		// flips, so the vertex set is untouched.
+		const { doc, cm } = docWith(sphereIcosa(2).mesh, MeshElement.MM_FACEQUALITY);
+		const before = { vn: cm.vn, fn: cm.fn };
+		kernel.applyFilter(doc, "Tri to Quad by smart triangle pairing");
+		expect(cm.vn).toBe(before.vn);
+		expect(cm.fn).toBe(before.fn);
+	});
+
+	test("the flips keep the mesh closed and manifold", () => {
+		const { doc, cm } = docWith(sphereIcosa(2).mesh, MeshElement.MM_FACEQUALITY);
+		kernel.applyFilter(doc, "Tri to Quad by smart triangle pairing");
+		UpdateTopology.faceFace(cm);
+		expect(Clean.isWaterTight(cm)).toBe(true);
+		expect(Clean.countNonManifoldEdgeFF(cm)).toBe(0);
+		expect(hasConsistentPerFaceFauxFlag(cm)).toBe(true);
+		expect(isBitTriQuadOnly(cm)).toBe(true);
+	});
+
+	test("an odd face count is fixed by splitting one border face", () => {
+		// Pairing consumes two faces at a time, so parity has to be dealt with
+		// before a perfect matching is even possible.
+		const cm = gridPlane(3, 3).mesh;
+		UpdateTopology.faceFace(cm);
+		// Delete one face to make the count odd.
+		Allocator.deleteFace(cm, 0);
+		Allocator.compactEveryVector(cm);
+		expect(cm.fn % 2).toBe(1);
+		const { doc } = docWith(cm, MeshElement.MM_FACEQUALITY);
+		const out = kernel.applyFilter(doc, "Tri to Quad by smart triangle pairing");
+		// One face was added for parity, and the result is even and pure.
+		expect(cm.fn % 2).toBe(0);
+		expect(out.pure).toBe(true);
+	});
+
+	test("refuses a non-manifold mesh", () => {
+		const cm = new CMeshO();
+		Allocator.addVertices(cm, 5);
+		cm.setVert(0, 0, 0, 0);
+		cm.setVert(1, 1, 0, 0);
+		cm.setVert(2, 0, 1, 0);
+		cm.setVert(3, 0, 0, 1);
+		cm.setVert(4, 0, -1, 0);
+		Allocator.addFaces(cm, 3);
+		cm.setFace(0, 0, 1, 2);
+		cm.setFace(1, 0, 1, 3);
+		cm.setFace(2, 0, 1, 4);
+		const { doc } = docWith(cm, MeshElement.MM_FACEQUALITY);
+		expect(() => kernel.applyFilter(doc, "Tri to Quad by smart triangle pairing")).toThrow(
+			MLException,
+		);
 	});
 });

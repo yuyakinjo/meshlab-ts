@@ -272,15 +272,18 @@ describe("Subdivision Surfaces: Doo Sabin", () => {
 // -------------------------------------------------------------- registration
 
 describe("registration", () => {
-	test("only the two heaviest filter_meshing entries are still pending", () => {
+	test("what is left of filter_meshing says so rather than guessing", () => {
+		// Derived, not enumerated: the same test named its pending filters last
+		// batch and went stale the moment one of them landed.
 		const pending = kernel
 			.filterList()
-			.filter((f) => f.plugin.pluginName() === "FilterMeshing" && !f.implemented)
-			.map((f) => f.name)
-			.sort();
-		expect(pending).toEqual([
-			"Simplification: Quadric Edge Collapse Decimation (with texture)",
-			"Tri to Quad by smart triangle pairing",
-		]);
+			.filter((f) => f.plugin.pluginName() === "FilterMeshing" && !f.implemented);
+		for (const action of pending) {
+			const doc = new MeshDocument();
+			doc.addNewMesh("", "m", true, sphereIcosa(1).mesh);
+			expect(() => kernel.applyFilter(doc, action.name), action.name).toThrow(MLException);
+		}
+		// And the plugin is nearly done, so the list is short.
+		expect(pending.length).toBeLessThan(3);
 	});
 });
