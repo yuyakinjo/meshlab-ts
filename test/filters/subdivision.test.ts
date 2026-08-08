@@ -355,14 +355,16 @@ describe("the subdivision schemes", () => {
 		}
 	});
 
-	test("the quad schemes are still explicitly unimplemented", () => {
-		// They produce quads, which this CMeshO does not carry; better to say so
-		// than to hand back a triangulation nobody asked for.
-		for (const name of [
-			"Subdivision Surfaces: Catmull-Clark",
-			"Subdivision Surfaces: Doo Sabin",
-			"Subdivision Surfaces: LS3 Loop",
-		]) {
+	test("the schemes still pending say so rather than guessing", () => {
+		// Catmull-Clark and Doo Sabin produce polygons larger than a quad, which
+		// the faux-edge representation cannot express — better to say so than to
+		// hand back a triangulation nobody asked for. The list is derived rather
+		// than written out, so it cannot go stale as the two land.
+		const pending = kernel
+			.filterList()
+			.filter((f) => f.name.startsWith("Subdivision Surfaces:") && !f.implemented)
+			.map((f) => f.name);
+		for (const name of pending) {
 			const doc = new MeshDocument();
 			doc.addNewMesh("", "m", true, Platonic.sphere(1));
 			expect(() => kernel.applyFilter(doc, name), name).toThrow(MLNotImplementedException);

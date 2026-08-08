@@ -14,6 +14,7 @@ import type { CMeshO } from "./cmesho.ts";
 import { FaceFlag, VertexFlag } from "./flags.ts";
 import { Pos } from "./pos.ts";
 import { UpdateFlags } from "./update/flag.ts";
+import { UpdateNormal } from "./update/normal.ts";
 import { UpdateTopology } from "./update/topology.ts";
 
 /** Where a new vertex lands, given the edge it splits. */
@@ -469,6 +470,7 @@ export function selectVerticesFromFaces(m: CMeshO): void {
 export const Refine = {
 	refineE,
 	refineLoop,
+	refineLS3Loop,
 	midPoint,
 	midPointButterfly,
 	oddPointLoop,
@@ -476,3 +478,179 @@ export const Refine = {
 	longerThan,
 	everyEdge,
 } as const;
+
+/**
+ * An algebraic sphere fitted to weighted points-with-normals, and the
+ * projection onto it.
+ *
+ * The LS3 scheme of Boyé, Guennebaud and Schlick: run Loop's own weights, but
+ * instead of averaging the *positions* with them, use them to fit a sphere to
+ * the neighbourhood's positions *and normals* and take the point on that
+ * sphere. Loop converges to a surface that ignores the normals it was given;
+ * LS3 uses them, so a coarse mesh with good normals subdivides into something
+ * much closer to the surface those normals describe.
+ *
+ * The sphere is `u₄|p|² + u⃗·p + u₀ = 0`, which degenerates gracefully: a zero
+ * quadratic term is a plane, and the code takes that branch rather than
+ * dividing by it.
+ */
+export class AlgebraicSphere {
+	private sumP = [0, 0, 0];
+	private sumN = [0, 0, 0];
+	private sumDotPN = 0;
+	private sumDotPP = 0;
+	private sumW = 0;
+
+	add(p: readonly number[], n: readonly number[], w: number): void {
+		for (let k = 0; k < 3; k++) {
+			this.sumP[k] += p[k] * w;
+			this.sumN[k] += n[k] * w;
+		}
+		this.sumDotPN += w * (n[0] * p[0] + n[1] * p[1] + n[2] * p[2]);
+		this.sumDotPP += w * (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
+		this.sumW += w;
+	}
+
+	/** The projection of the weighted mean onto the fitted sphere. */
+	project(beta = 1): [number, number, number] {
+		const invW = this.sumW === 0 ? 0 : 1 / this.sumW;
+		const origin = this.sumP.map((x) => x * invW) as [number, number, number];
+		if (invW === 0) return origin;
+
+		const dotPN =
+			this.sumP[0] * this.sumN[0] + this.sumP[1] * this.sumN[1] + this.sumP[2] * this.sumN[2];
+		const spread =
+			this.sumDotPP - invW * (this.sumP[0] ** 2 + this.sumP[1] ** 2 + this.sumP[2] ** 2);
+		// Every neighbour at the same place: no sphere to speak of.
+		if (Math.abs(spread) < 1e-300) return origin;
+		const quad = (beta * 0.5 * (this.sumDotPN - invW * dotPN)) / spread;
+		const linear = [0, 1, 2].map((k) => (this.sumN[k] - this.sumP[k] * 2 * quad) * invW);
+		const constant =
+			-invW *
+			(linear[0] * this.sumP[0] +
+				linear[1] * this.sumP[1] +
+				linear[2] * this.sumP[2] +
+				this.sumDotPP * quad);
+
+		if (Math.abs(quad) > 1e-7) {
+			const b = 1 / quad;
+			const centre = linear.map((x) => x * -0.5 * b);
+			const inside = centre[0] ** 2 + centre[1] ** 2 + centre[2] ** 2 - b * constant;
+			if (!(inside > 0)) return origin;
+			const radius = Math.sqrt(inside);
+			const dir = [0, 1, 2].map((k) => origin[k] - centre[k]);
+			const len = Math.hypot(dir[0], dir[1], dir[2]);
+			if (len === 0) return origin;
+			return [0, 1, 2].map((k) => centre[k] + (dir[k] / len) * radius) as [number, number, number];
+		}
+
+		// The quadratic term vanished: the fit is a plane, so project onto it.
+		const len = Math.hypot(linear[0], linear[1], linear[2]);
+		if (len === 0) return origin;
+		const unit = linear.map((x) => x / len);
+		const offset = constant / len;
+		const d = unit[0] * origin[0] + unit[1] * origin[1] + unit[2] * origin[2] + offset;
+		return [0, 1, 2].map((k) => origin[k] - unit[k] * d) as [number, number, number];
+	}
+}
+
+/**
+ * Loop subdivision with the new points projected onto a locally fitted
+ * algebraic sphere rather than placed by the positional average.
+ *
+ * Same connectivity as {@link refineLoop} and the same weights; what differs is
+ * only where each new vertex lands. Needs per-vertex normals, and reads them
+ * as given rather than recomputing — using the mesh's own normals is the whole
+ * point of the scheme.
+ */
+export function refineLS3Loop(
+	m: CMeshO,
+	predicate: EdgePredicate = everyEdge,
+	options: RefineOptions = {},
+): boolean {
+	if (m.ffFace === null) UpdateTopology.faceFace(m);
+	UpdateNormal.perVertexNormalizedPerFaceNormalized(m);
+
+	const originalVertSize = m.vertSize;
+	const moved = new Uint8Array(originalVertSize);
+	const even = new Float64Array(originalVertSize * 3);
+	const seen = new Uint8Array(originalVertSize);
+
+	const normalOf = (v: number): number[] => [
+		m.vertNormal[3 * v],
+		m.vertNormal[3 * v + 1],
+		m.vertNormal[3 * v + 2],
+	];
+	const pointOf = (v: number): number[] => [m.vx(v), m.vy(v), m.vz(v)];
+
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		if (options.selectedOnly === true && !m.isFaceS(f)) continue;
+		for (let i = 0; i < 3; i++) {
+			const v = m.fv(f, i);
+			if (seen[v] || m.isVertD(v)) continue;
+			seen[v] = 1;
+			const ring = oneRing(m, f, i);
+			if (ring === null) continue;
+			// Loop's even rule as weights: beta on each neighbour, the rest on
+			// the vertex itself.
+			const beta = loopBeta(ring.length);
+			const sphere = new AlgebraicSphere();
+			sphere.add(pointOf(v), normalOf(v), 1 - ring.length * beta);
+			for (const w of ring) sphere.add(pointOf(w), normalOf(w), beta);
+			const p = sphere.project();
+			even[3 * v] = p[0];
+			even[3 * v + 1] = p[1];
+			even[3 * v + 2] = p[2];
+			moved[v] = 1;
+		}
+	}
+
+	// Loop's odd rule as weights: 3/8 on the edge's ends, 1/8 on the two
+	// vertices opposite it.
+	const ls3Odd: Interpolator = (mesh, pos) => {
+		const sphere = new AlgebraicSphere();
+		sphere.add(pointOf(pos.v), normalOf(pos.v), 3 / 8);
+		sphere.add(pointOf(pos.vFlip), normalOf(pos.vFlip), 3 / 8);
+		for (const w of oppositeVertices(mesh, pos)) {
+			sphere.add(pointOf(w), normalOf(w), 1 / 8);
+		}
+		return sphere.project();
+	};
+
+	if (!refineE(m, ls3Odd, predicate, options)) return false;
+	for (let v = 0; v < originalVertSize; v++) {
+		if (moved[v] && !m.isVertD(v)) m.setVert(v, even[3 * v], even[3 * v + 1], even[3 * v + 2]);
+	}
+	return true;
+}
+
+/** The neighbours of corner `i` of `face`, or null on a non-manifold fan. */
+function oneRing(m: CMeshO, face: number, i: number): number[] | null {
+	const start = new Pos(m, face, i, m.fv(face, i));
+	const he = start.clone();
+	const out: number[] = [];
+	let guard = 0;
+	do {
+		out.push(he.vFlip);
+		he.nextE();
+		if (++guard > 1000) return null;
+	} while (!he.equals(start));
+	return out.length === 0 ? null : out;
+}
+
+/** The one or two vertices opposite the edge `pos` sits on. */
+function oppositeVertices(m: CMeshO, pos: Pos): number[] {
+	const out: number[] = [];
+	const here = m.fv(pos.f, (pos.z + 2) % 3);
+	out.push(here);
+	if (!pos.isBorder()) {
+		const g = m.ffp(pos.f, pos.z);
+		out.push(m.fv(g, (m.ffi(pos.f, pos.z) + 2) % 3));
+	} else {
+		// On a border the odd rule has only one opposite vertex, so it counts
+		// double to keep the weights summing to one.
+		out.push(here);
+	}
+	return out;
+}

@@ -10,20 +10,21 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 258 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 262 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
 - **filter_clean** (15, complete) — welding, degenerate and duplicate removal, isolated pieces,
   non-manifold edge and vertex repair, T-vertices, removal by quality, wedge-UV merging,
   mismatched-border snapping, and ball-pivoting surface reconstruction
-- **filter_meshing** (29 of 37) — re-orientation, hole closing, QEM decimation, the transform
+- **filter_meshing** (33 of 37) — re-orientation, hole closing, QEM decimation, the transform
   family (scale, centre, rotate, freeze, reset, explicit matrix, translation/rotation/scale,
   inversion, axis flip and swap, principal-axis alignment, rotate-to-fit-a-plane), point-cloud
   normal estimation and smoothing, Loop/Butterfly/midpoint subdivision, isotropic explicit
   remeshing, clustering decimation, principal curvature directions, crease-edge selection,
   polygon-to-triangle conversion, planar sections, selection perimeters, crease polylines and
-  cylindrical unwrapping
+  cylindrical unwrapping, quad-dominant pairing, 4-8 quad refinement, LS3 Loop subdivision and
+  vertex attribute seams
 - **filter_select** (24, complete) — selection and deletion, dilation and erosion, selection by
   vertex/face quality, by colour in RGB or HSV, by view angle, by edge length, by connectivity,
   by triangle shape and fold, by local outlier probability, by self-intersection, and by
@@ -99,7 +100,7 @@ printable solid, and to go from a raw point cloud to a watertight surface:
 of its face-corner forms, and OFF's `C`/`N` header prefixes.
 
 All **282 filters are registered from day one** — the names are extracted from the C++ sources
-rather than transcribed. The 24 without an implementation yet throw `MLNotImplementedException`
+rather than transcribed. The 20 without an implementation yet throw `MLNotImplementedException`
 when applied, so a missing filter is never mistaken for a filter that did nothing.
 
 ```bash
@@ -213,6 +214,18 @@ of truth for filter names and parameter defaults. No code is copied from it.
   `(1 - d²/r²)⁴` inside its own radius and by nothing outside it, so a query far from the cloud
   has no answer at all. Every entry point returns null there rather than extrapolating, and the
   filters report it as "out of range"; widening `FilterScale` is the knob that exists for it.
+- **LS3 Loop uses the normals; plain Loop cannot.** Both split the same edges with the same
+  weights. The difference is what the weights are applied to: Loop averages the neighbouring
+  *positions*, LS3 fits an algebraic sphere to the neighbouring positions *and normals* and takes
+  the point on it. On a sphere with true normals, one pass of LS3 lands within 1e-5 of the real
+  surface where Loop is 1.7% inside it. It does not improve monotonically with iterations, and
+  that is not a defect: after the first pass the normals come from the new geometry rather than
+  from the original surface, so what it converges to drifts a little as the mesh does.
+- **A quad is two triangles and a hidden edge.** Making a mesh quad-dominant therefore moves
+  nothing and adds nothing — it only decides which edges to hide, so `2·quads + triangles` always
+  equals the face count and the operation is exactly reversible. The refining variant does add
+  geometry, and its count is forced: splitting every triangle at its centroid makes each original
+  *edge* the diagonal of a quad, so a closed mesh yields exactly as many quads as it had edges.
 - **Edges are a real container, not degenerate triangles.** A polyline has vertices and edges and
   no faces, and three filters produce exactly that, so `CMeshO` grew an edge domain alongside the
   vertex and face ones. It costs nothing on an ordinary mesh — the arrays are empty — and it

@@ -29,6 +29,9 @@ import {
 import type { CallBackPos } from "../../common/utilities/callback.ts";
 import { MLException, MLNotImplementedException } from "../../common/utilities/ml_exception.ts";
 import { Allocator } from "../../vcg/complex/allocator.ts";
+import { AttributeSeam, type SeamMask } from "../../vcg/complex/attribute_seam.ts";
+import { countBitQuads } from "../../vcg/complex/bit_quad.ts";
+import { BitQuadCreation } from "../../vcg/complex/bitquad_creation.ts";
 import { Clean } from "../../vcg/complex/clean.ts";
 import { CMeshO } from "../../vcg/complex/cmesho.ts";
 import { CreaseCut } from "../../vcg/complex/crease_cut.ts";
@@ -81,6 +84,10 @@ export const FP = {
 	FP_PERIMETER_POLYLINE: 26,
 	FP_SLICE_WITH_A_PLANE: 27,
 	FP_CYLINDER_UNWRAP: 28,
+	FP_REFINE_HALF_CATMULL: 29,
+	FP_QUAD_DOMINANT: 30,
+	FP_REFINE_LS3_LOOP: 31,
+	FP_VATTR_SEAM: 32,
 } as const;
 
 const GEOMETRY_AND_TOPOLOGY = MeshElement.MM_GEOMETRY_AND_TOPOLOGY_CHANGE;
@@ -338,6 +345,45 @@ const SPECS: Readonly<Record<number, FilterSpec>> = {
 		pythonName: "generate_polyline_from_planar_section",
 		info: "Compute the polyline representing a planar section (a slice) of a mesh.",
 		filterClass: FilterClass.Measure,
+		requirements: MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_REFINE_HALF_CATMULL]: {
+		name: "Tri to Quad by 4-8 Subdivision",
+		pythonName: "meshing_tri_to_quad_by_4_8_subdivision",
+		info:
+			"Convert a tri-mesh into a quad mesh by applying a 4-8 subdivision scheme. It introduces " +
+			"less overhead than the plain Catmull-Clark, but the resulting mesh is not a pure quad " +
+			"mesh if the original one had borders.",
+		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
+		requirements: MeshElement.MM_FACEQUALITY | MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_QUAD_DOMINANT]: {
+		name: "Turn into Quad-Dominant mesh",
+		pythonName: "meshing_tri_to_quad_dominant",
+		info:
+			"Convert a tri mesh into a quad mesh by pairing triangles into quads, leaving unpaired " +
+			"the triangles that had no good partner.",
+		filterClass: FilterClass.Remeshing | FilterClass.Polygonal,
+		requirements: MeshElement.MM_FACEQUALITY | MeshElement.MM_FACEFACETOPO,
+	},
+	[FP.FP_REFINE_LS3_LOOP]: {
+		name: "Subdivision Surfaces: LS3 Loop",
+		pythonName: "meshing_surface_subdivision_ls3_loop",
+		info:
+			"Apply LS3 Subdivision Surface algorithm using Loop's weights. This refinement method " +
+			"takes normals into account.<br>See:<i>Boye, S. and Guennebaud, G. and Schlick, C.</i><br>" +
+			"<b>Least squares subdivision surfaces</b><br>Computer Graphics Forum, 2010.",
+		filterClass: FilterClass.Remeshing,
+		requirements: MeshElement.MM_FACEFACETOPO | MeshElement.MM_VERTNORMAL,
+	},
+	[FP.FP_VATTR_SEAM]: {
+		name: "Vertex Attribute Seam",
+		pythonName: "meshing_vertex_attribute_seam",
+		info:
+			"Make all selected vertex attributes connectivity-independent:<br/>vertices are split " +
+			"wherever two faces disagree about an attribute, so that each corner's value can live on " +
+			"a vertex of its own.",
+		filterClass: FilterClass.Remeshing,
 		requirements: MeshElement.MM_FACEFACETOPO,
 	},
 	[FP.FP_CYLINDER_UNWRAP]: {
@@ -1149,6 +1195,71 @@ export class FilterMeshing extends FilterPlugin {
 				);
 				break;
 
+			case FP.FP_QUAD_DOMINANT:
+				list.add(
+					new RichEnum("level", 1, ["Fewest triangles", "(in between)", "Better quality quads"], {
+						description: "Optimize For:",
+						tooltip: "Choose any of three different greedy strategies.",
+					}),
+				);
+				break;
+
+			case FP.FP_REFINE_LS3_LOOP:
+				list.add(
+					new RichInt("LoopWeight", 0, {
+						description: "Weighting scheme",
+						tooltip: "Change the weights used. Allows one to optimize some behaviours over others.",
+					}),
+				);
+				list.add(
+					new RichInt("Iterations", 3, {
+						description: "Iterations",
+						tooltip: "Number of times the model is subdivided",
+					}),
+				);
+				list.add(
+					new RichPercentage(
+						"Threshold",
+						m === undefined ? 0.01 : (m.cm.bbox.diagonal || 1) * 0.01,
+						0,
+						m === undefined ? 1 : m.cm.bbox.diagonal || 1,
+						{
+							description: "Edge Threshold",
+							tooltip:
+								"All the edges <b>longer</b> than this threshold will be refined.<br>Setting this " +
+								"value to zero will force an uniform refinement.",
+						},
+					),
+				);
+				list.add(
+					new RichBool("Selected", false, {
+						description: "Affect only selected faces",
+						tooltip: "If selected the filter affect only the selected faces",
+					}),
+				);
+				break;
+
+			case FP.FP_VATTR_SEAM:
+				list.add(
+					new RichEnum("NormalMode", 0, ["None", "Per Vertex", "Per Wedge", "Per Face"], {
+						description: "Normal Source:",
+						tooltip: "Choose a method",
+					}),
+				);
+				list.add(
+					new RichEnum("ColorMode", 0, ["None", "Per Vertex", "Per Wedge", "Per Face"], {
+						description: "Color Source:",
+						tooltip: "Choose a method",
+					}),
+				);
+				list.add(
+					new RichEnum("TexcoordMode", 0, ["None", "Per Vertex", "Per Wedge"], {
+						description: "Texcoord Source:",
+						tooltip: "Choose a method",
+					}),
+				);
+				break;
+
 			default:
 				break;
 		}
@@ -1677,6 +1788,80 @@ export class FilterMeshing extends FilterPlugin {
 					vertex_number: unrolled.vn,
 					face_number: unrolled.fn,
 				};
+			}
+
+			case FP.FP_REFINE_HALF_CATMULL: {
+				if (!BitQuadCreation.isTriQuadOnly(cm)) {
+					throw new MLException(
+						"Tri to Quad by 4-8 Subdivision requires a mesh with only triangular and/or quad faces.",
+					);
+				}
+				m.updateDataMask(MeshElement.MM_FACEQUALITY | MeshElement.MM_FACEFACETOPO);
+				UpdateTopology.faceFace(cm);
+				const result = BitQuadCreation.makePureByRefine(cm);
+				m.clearDataMask(MeshElement.MM_FACEFACETOPO);
+				m.updateDataMask(MeshElement.MM_POLYGONAL);
+				m.updateBoxAndNormals();
+				doc.Log.log(
+					`Refined into ${result.quads} quads and ${result.triangles} leftover triangles`,
+				);
+				return { quad_number: result.quads, triangle_number: result.triangles };
+			}
+
+			case FP.FP_QUAD_DOMINANT: {
+				m.updateDataMask(MeshElement.MM_FACEQUALITY | MeshElement.MM_FACEFACETOPO);
+				UpdateTopology.faceFace(cm);
+				BitQuadCreation.makeDominant(cm, params.getEnum("level"));
+				const quads = countBitQuads(cm);
+				m.clearDataMask(MeshElement.MM_FACEFACETOPO);
+				m.updateDataMask(MeshElement.MM_POLYGONAL);
+				m.updateBoxAndNormals();
+				doc.Log.log(`Paired ${quads} quads, leaving ${cm.fn - 2 * quads} triangles`);
+				return { quad_number: quads, triangle_number: cm.fn - 2 * quads };
+			}
+
+			case FP.FP_REFINE_LS3_LOOP: {
+				UpdateTopology.faceFace(cm);
+				const threshold = params.getAbsPerc("Threshold");
+				const selectedOnly = params.getBool("Selected");
+				const iterations = params.getInt("Iterations");
+				const before = cm.fn;
+				const predicate = threshold > 0 ? Refine.longerThan(threshold) : Refine.everyEdge;
+				for (let i = 0; i < iterations; i++) {
+					if (!Refine.refineLS3Loop(cm, predicate, { selectedOnly })) break;
+				}
+				Allocator.compactEveryVector(cm);
+				m.updateBoxAndNormals();
+				doc.Log.log(`LS3 Loop refined ${before} faces into ${cm.fn}`);
+				return { vertex_number: cm.vn, face_number: cm.fn };
+			}
+
+			case FP.FP_VATTR_SEAM: {
+				const pick = <T extends string>(name: string, options: readonly T[]): T | undefined => {
+					const choice = params.getEnum(name);
+					return choice > 0 && choice <= options.length ? options[choice - 1] : undefined;
+				};
+				const normal = pick("NormalMode", ["vertex", "wedge", "face"] as const);
+				const color = pick("ColorMode", ["vertex", "wedge", "face"] as const);
+				const texcoord = pick("TexcoordMode", ["vertex", "wedge"] as const);
+				const mask: SeamMask = {
+					...(normal === undefined ? {} : { normal }),
+					...(color === undefined ? {} : { color }),
+					...(texcoord === undefined ? {} : { texcoord }),
+				};
+				if (normal !== undefined) m.updateDataMask(MeshElement.MM_VERTNORMAL);
+				if (color !== undefined) m.updateDataMask(MeshElement.MM_VERTCOLOR);
+				if (texcoord !== undefined) m.updateDataMask(MeshElement.MM_VERTTEXCOORD);
+				if (normal === undefined && color === undefined && texcoord === undefined) {
+					throw new MLException(
+						"Vertex Attribute Seam needs at least one attribute to split on; every source is set to None.",
+					);
+				}
+				const added = AttributeSeam.splitVertexBySeam(cm, mask);
+				m.clearDataMask(MeshElement.MM_FACEFACETOPO | MeshElement.MM_VERTFACETOPO);
+				m.updateBoxAndNormals();
+				doc.Log.log(`Split ${added} vertices along the attribute seams`);
+				return { vertex_number: cm.vn, added_vertices: added };
 			}
 
 			default:
