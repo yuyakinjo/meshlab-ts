@@ -3,6 +3,7 @@ import { MeshLabKernel } from "../../../src/common/meshlab_kernel.ts";
 import { MeshDocument } from "../../../src/common/ml_document/mesh_document.ts";
 import { filterClassToString } from "../../../src/common/plugins/filter_class.ts";
 import { MLException } from "../../../src/common/utilities/ml_exception.ts";
+import { Allocator } from "../../../src/vcg/complex/allocator.ts";
 import { Clean } from "../../../src/vcg/complex/clean.ts";
 import type { CMeshO } from "../../../src/vcg/complex/cmesho.ts";
 import { Hole } from "../../../src/vcg/complex/hole.ts";
@@ -365,18 +366,156 @@ describe("orientation and hole closing together", () => {
 });
 
 describe("Close Holes: RefineHole", () => {
-	test("refuses rather than silently ignoring the request", () => {
-		// The parameter is accepted for API compatibility but the refinement
-		// is not implemented. Quietly closing the hole unrefined would leave
-		// the caller believing they got an evenly-spaced patch, which is the
-		// exact failure this project refuses everywhere else.
-		expect(() => apply(sphereWithHoles(5), "Close Holes", { RefineHole: true })).toThrow(
-			/not implemented yet/,
-		);
+	/**
+	 * A sphere with its cap removed: one hole of many edges, so the filling
+	 * produces the fan of long thin triangles that refinement exists to fix.
+	 *
+	 * The tiny holes in `sphereWithHoles` are filled with a single triangle each
+	 * and have nothing to refine, which is why they cannot be used here.
+	 */
+	function cappedSphere(subdiv = 3, cut = 0.75): CMeshO {
+		const cm = sphereIcosa(subdiv).mesh;
+		for (let f = 0; f < cm.faceSize; f++) {
+			const z = [0, 1, 2].reduce((sum, k) => sum + cm.vz(cm.fv(f, k)), 0) / 3;
+			if (z > cut) Allocator.deleteFace(cm, f);
+		}
+		Allocator.compactEveryVector(cm);
+		return cm;
+	}
+
+	/** Edge lengths over the selected faces — the patch, after a fill. */
+	function patchEdges(cm: CMeshO): { mean: number; longest: number; count: number } {
+		let sum = 0;
+		let count = 0;
+		let longest = 0;
+		for (let f = 0; f < cm.faceSize; f++) {
+			if (cm.isFaceD(f) || !cm.isFaceS(f)) continue;
+			for (let k = 0; k < 3; k++) {
+				const a = cm.fv(f, k);
+				const b = cm.fv(f, (k + 1) % 3);
+				const length = Math.hypot(cm.vx(a) - cm.vx(b), cm.vy(a) - cm.vy(b), cm.vz(a) - cm.vz(b));
+				sum += length;
+				count++;
+				if (length > longest) longest = length;
+			}
+		}
+		return { mean: count > 0 ? sum / count : 0, longest, count };
+	}
+
+	test("replaces the fan of long thin triangles with an even patch", () => {
+		// The whole point, and the sharpest way to state it: the fill spans the
+		// hole with edges as long as the hole is wide, and refinement must leave
+		// nothing anywhere near that long.
+		const plain = apply(cappedSphere(), "Close Holes", { MaxHoleSize: 500, RefineHole: false });
+		const refined = apply(cappedSphere(), "Close Holes", { MaxHoleSize: 500, RefineHole: true });
+
+		const before = patchEdges(plain.mesh);
+		const after = patchEdges(refined.mesh);
+		expect(before.longest).toBeGreaterThan(1);
+		expect(after.longest).toBeLessThan(before.longest / 4);
+		expect(after.mean).toBeLessThan(before.mean / 2);
+		expect(after.count).toBeGreaterThan(before.count * 4);
 	});
 
-	test("RefineHole=false is the default and closes the hole", () => {
-		const { out } = apply(sphereWithHoles(5), "Close Holes", { RefineHole: false });
-		expect(out.closed_holes).toBe(5);
+	test("drives the patch toward the edge length it was asked for", () => {
+		// And responds to it: halving the target must give shorter edges and more
+		// of them, or the parameter is decoration.
+		const coarse = apply(cappedSphere(), "Close Holes", {
+			MaxHoleSize: 500,
+			RefineHole: true,
+			RefineHoleEdgeLen: 0.2,
+		});
+		const fine = apply(cappedSphere(), "Close Holes", {
+			MaxHoleSize: 500,
+			RefineHole: true,
+			RefineHoleEdgeLen: 0.08,
+		});
+		expect(patchEdges(fine.mesh).mean).toBeLessThan(patchEdges(coarse.mesh).mean);
+		expect(fine.mesh.fn).toBeGreaterThan(coarse.mesh.fn);
+		// Within a factor of two of the request, which is as tight as a schedule
+		// ending in two smoothing iterations gets.
+		const mean = patchEdges(coarse.mesh).mean;
+		expect(mean).toBeGreaterThan(0.2 / 2);
+		expect(mean).toBeLessThan(0.2 * 2);
+	});
+
+	test("the mesh is still closed and still manifold afterwards", () => {
+		const { mesh } = apply(cappedSphere(), "Close Holes", {
+			MaxHoleSize: 500,
+			RefineHole: true,
+		});
+		UpdateTopology.faceFace(mesh);
+		expect(Clean.isWaterTight(mesh)).toBe(true);
+		expect(Clean.countNonManifoldEdgeFF(mesh)).toBe(0);
+		expect(Hole.getInfo(mesh).length).toBe(0);
+		assertAllocatorConsistent(mesh);
+	});
+
+	test("nothing outside the patch moves, at all", () => {
+		// `selectedOnly` has to mean it. A remesher that smoothed the whole mesh
+		// would produce a nicer-looking result and quietly alter geometry the
+		// caller never asked it to touch.
+		const cm = cappedSphere();
+		const away = new Set<string>();
+		const at = (v: number): string =>
+			`${cm.vx(v).toFixed(9)},${cm.vy(v).toFixed(9)},${cm.vz(v).toFixed(9)}`;
+		for (let v = 0; v < cm.vertSize; v++) {
+			// Well clear of the hole's rim, so these belong only to original faces.
+			if (!cm.isVertD(v) && cm.vz(v) < 0.6) away.add(at(v));
+		}
+		expect(away.size).toBeGreaterThan(100);
+
+		const { mesh } = apply(cm, "Close Holes", { MaxHoleSize: 500, RefineHole: true });
+		const present = new Set<string>();
+		for (let v = 0; v < mesh.vertSize; v++) if (!mesh.isVertD(v)) present.add(at(v));
+		for (const key of away) expect(present.has(key), key).toBe(true);
+	});
+
+	test("refining does not inflate the shape", () => {
+		// The patch is a minimal surface across the hole; refinement subdivides
+		// it, and must not let it balloon out or collapse inward.
+		const plain = apply(cappedSphere(), "Close Holes", { MaxHoleSize: 500, RefineHole: false });
+		const refined = apply(cappedSphere(), "Close Holes", { MaxHoleSize: 500, RefineHole: true });
+		const volume = (cm: CMeshO): number => {
+			let total = 0;
+			for (let f = 0; f < cm.faceSize; f++) {
+				if (cm.isFaceD(f)) continue;
+				const p = [0, 1, 2].map((k) => {
+					const v = cm.fv(f, k);
+					return [cm.vx(v), cm.vy(v), cm.vz(v)];
+				});
+				total +=
+					(p[0][0] * (p[1][1] * p[2][2] - p[2][1] * p[1][2]) -
+						p[1][0] * (p[0][1] * p[2][2] - p[2][1] * p[0][2]) +
+						p[2][0] * (p[0][1] * p[1][2] - p[1][1] * p[0][2])) /
+					6;
+			}
+			return Math.abs(total);
+		};
+		expect(volume(refined.mesh)).toBeCloseTo(volume(plain.mesh), 1);
+	});
+
+	test("refines even when the new faces were not asked to stay selected", () => {
+		// Upstream refines whatever happens to be selected, so RefineHole with
+		// NewFaceSelected off refines the *previous* selection — or nothing. The
+		// parameter says "refine the filled hole", so the patch is refined either
+		// way, and the caller's choice about the selection is honoured after.
+		const { mesh } = apply(cappedSphere(), "Close Holes", {
+			MaxHoleSize: 500,
+			RefineHole: true,
+			NewFaceSelected: false,
+		});
+		expect(mesh.fn).toBeGreaterThan(1000);
+		let selected = 0;
+		for (let f = 0; f < mesh.faceSize; f++) if (!mesh.isFaceD(f) && mesh.isFaceS(f)) selected++;
+		expect(selected).toBe(0);
+	});
+
+	test("RefineHole=false is the default and closes the hole unrefined", () => {
+		const plain = apply(sphereWithHoles(5), "Close Holes", {});
+		expect(plain.out.closed_holes).toBe(5);
+		expect(plain.out.refined_faces).toBeUndefined();
+		const { out } = apply(cappedSphere(), "Close Holes", { MaxHoleSize: 500, RefineHole: true });
+		expect(out.refined_faces as number).toBeGreaterThan(out.new_faces as number);
 	});
 });

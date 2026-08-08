@@ -425,6 +425,16 @@ of truth for filter names and parameter defaults. No code is copied from it.
   tighter than `+`/`-` but looser than `^` (`-2^2` is -4, `-2*3` is -6), `log` is the natural
   logarithm, and comparisons yield 1 or 0 rather than booleans. `rnd` is the one omission: a
   filter whose output changed between runs would make every downstream hash useless.
+- **Refining a filled hole is the isotropic remesher, restricted to the patch.** This is what
+  upstream does too — the interesting part is not an algorithm but the *schedule*, and its own
+  comment explains why: start with large triangles to converge quickly toward the minimal surface,
+  drop to small ones to unfold whatever went wrong at the boundary, then go for the length actually
+  wanted, three times over. The feature angle is set past 180° so no edge inside the patch counts
+  as a crease, and reprojection is off because there is no original surface under a patch to
+  project onto. One deliberate difference: upstream refines *whatever is selected*, so asking for
+  `RefineHole` with `NewFaceSelected` off refines the previous selection or nothing at all; here
+  the patch is refined either way, since that is what the parameter says, and the caller's choice
+  about the selection is honoured afterwards.
 - **Screened Poisson is reimplemented, not ported.** MeshLab vendors 15k lines of Kazhdan's
   PoissonRecon; this is a trilinear multigrid solve with marching tetrahedra instead of degree-2
   B-splines with conjugate gradients. The parameters and their meanings match, so the output is

@@ -39,7 +39,7 @@ import { UpdateCurvature as Curvature } from "../../vcg/complex/curvature.ts";
 import { FaceFlag, VertexFlag } from "../../vcg/complex/flags.ts";
 import { Hole } from "../../vcg/complex/hole.ts";
 import { Inertia } from "../../vcg/complex/inertia.ts";
-import { IsotropicRemeshing } from "../../vcg/complex/isotropic_remeshing.ts";
+import { IsotropicRemeshing, type RemeshResult } from "../../vcg/complex/isotropic_remeshing.ts";
 import { quadricTexSimplification } from "../../vcg/complex/local_optimization/quadric_tex.ts";
 import {
 	defaultQuadricParameters,
@@ -1394,18 +1394,6 @@ export class FilterMeshing extends FilterPlugin {
 							'Run "Repair non Manifold Edges" first.',
 					);
 				}
-				// Refinement subdivides the cap so it is evenly spaced rather
-				// than a fan of long thin triangles. It is not implemented yet,
-				// and quietly ignoring the request would leave the caller
-				// believing they got a refined patch. Refuse instead.
-				if (params.getBool("RefineHole")) {
-					throw new MLNotImplementedException(
-						"Close Holes with RefineHole=true (the hole is closed, but refining the patch " +
-							"is not implemented yet; pass RefineHole=false to close it unrefined)",
-						this.pluginName(),
-					);
-				}
-
 				// The ear scoring reads vertex normals to tell convex ears from
 				// concave ones, so they have to be current before filling.
 				m.updateBoxAndNormals();
@@ -1416,14 +1404,42 @@ export class FilterMeshing extends FilterPlugin {
 					strategy: params.getBool("SelfIntersection") ? "selfIntersection" : "minimumWeight",
 				});
 
-				if (params.getBool("NewFaceSelected")) Hole.selectFacesFrom(cm, firstNewFace);
+				const refine = params.getBool("RefineHole");
+				// Upstream selects the new faces only when `NewFaceSelected` is on,
+				// and then refines whatever is selected — so asking to refine with
+				// that flag off refines the *previous* selection, or nothing. The
+				// parameter says "refine the filled hole", so the patch is selected
+				// for the refinement pass either way, and the caller's own choice
+				// about the selection is honoured afterwards.
+				if (params.getBool("NewFaceSelected") || refine) {
+					Hole.selectFacesFrom(cm, firstNewFace);
+				}
 				Allocator.compactEveryVector(cm);
 				UpdateTopology.faceFace(cm);
 				m.updateBoxAndNormals();
 
+				let refined: RemeshResult | null = null;
+				if (refine) {
+					refined = refineFilledHole(cm, params.getAbsPerc("RefineHoleEdgeLen"));
+					if (!params.getBool("NewFaceSelected")) {
+						for (let f = 0; f < cm.faceSize; f++) cm.faceFlags[f] &= ~FaceFlag.SELECTED;
+					}
+					m.updateBoxAndNormals();
+				}
+
 				doc.Log.log(`Closed ${holeCount} holes and added ${newFaces} new faces`);
+				if (refined !== null) {
+					doc.Log.log(
+						`Refined the patch: ${refined.splits} splits, ${refined.collapses} collapses, ` +
+							`${refined.flips} flips, ${cm.fn} faces now`,
+					);
+				}
 				// Upstream's output keys, so a caller reading them keeps working.
-				return { closed_holes: holeCount, new_faces: newFaces };
+				return {
+					closed_holes: holeCount,
+					new_faces: newFaces,
+					...(refined === null ? {} : { refined_faces: cm.fn }),
+				};
 			}
 
 			case FP.FP_LOOP_SS:
@@ -2445,4 +2461,52 @@ function countSelectedFaces(cm: CMeshO): number {
 	let n = 0;
 	for (let f = 0; f < cm.faceSize; f++) if (!cm.isFaceD(f) && cm.isFaceS(f)) n++;
 	return n;
+}
+
+/**
+ * Refines the patch a hole filling just created, so it is evenly spaced rather
+ * than a fan of long thin triangles.
+ *
+ * This is not a bespoke algorithm: upstream runs its ordinary isotropic
+ * remesher over the selected faces alone, and the interesting part is the
+ * *schedule*, which its own comment explains — start with large triangles to
+ * converge quickly toward the minimal surface, drop to small ones to unfold
+ * whatever went wrong at the boundary, then go for the length actually wanted;
+ * three times over. The feature angle is set past 180 degrees so that no edge
+ * inside the patch is treated as a crease worth preserving, and reprojection is
+ * off because there is no original surface under the patch to project onto.
+ */
+function refineFilledHole(cm: CMeshO, edgeLen: number): RemeshResult {
+	// A zero-length target would divide by nothing; upstream's parameter is a
+	// percentage of the bounding-box diagonal and its default is 3% of it.
+	const target = edgeLen > 0 ? edgeLen : (cm.bbox.diagonal || 1) * 0.03;
+	const common = {
+		featureDeg: 181,
+		checkSurfDist: false,
+		maxSurfDist: Number.POSITIVE_INFINITY,
+		splitFlag: true,
+		collapseFlag: true,
+		swapFlag: true,
+		smoothFlag: true,
+		reprojectFlag: false,
+		selectedOnly: true,
+	};
+	const total = { splits: 0, collapses: 0, flips: 0 };
+	for (let round = 0; round < 3; round++) {
+		for (const [factor, iterations] of [
+			[3, 5],
+			[1 / 3, 3],
+			[1, 2],
+		] as const) {
+			const step = IsotropicRemeshing.isotropicRemeshing(cm, {
+				...common,
+				targetLen: target * factor,
+				iterations,
+			});
+			total.splits += step.splits;
+			total.collapses += step.collapses;
+			total.flips += step.flips;
+		}
+	}
+	return total;
 }
