@@ -10,7 +10,7 @@ runtime.
 
 ## Status
 
-**Tiers 0 to 2 are complete, and Tier 3 is under way.** 267 of MeshLab's 282 filters are
+**Tiers 0 to 2 are complete, and Tier 3 is under way.** 268 of MeshLab's 282 filters are
 implemented — enough to take a broken STL from a 3D scanner or a bad export and turn it into a
 printable solid, and to go from a raw point cloud to a watertight surface:
 
@@ -58,6 +58,8 @@ printable solid, and to go from a raw point cloud to a watertight surface:
   a texture, with a depth test and angle/distance/border weighting
 - **filter_mesh_alpha_wrap** (1) — a watertight shell around any input, however broken
 - **filter_cubization** (1) — Liu and Jacobson's cubic stylization
+- **filter_developability** (1) — Stein, Grinspun and Crane's developability optimization, which
+  pushes a surface toward pieces that can be cut flat and folded
 - **filter_camera** (8) — set a mesh's or a raster's camera, move any or all of them, measure
   vertex quality from a camera, and re-orient normals to face one
 - **filter_dirt** (2) — dust accumulation and point-cloud movement over a surface
@@ -348,6 +350,14 @@ of truth for filter names and parameter defaults. No code is copied from it.
   collapses, flattens the smaller star *reusing the first one's boundary layout* so the two share
   a coordinate system, and re-pins. A collapse that would strand a pin, or that folds the star
   when flattened, is undone rather than approximated.
+- **The developability energy and its gradient are two different functions, as upstream.**
+  MeshLab ships `filter_developability` with `FILTERDEVELOPABILITY_AVOID_BRANCHING` defined, which
+  makes the reported energy a *maximum* over pairs of face normals while the gradient it descends
+  stays that of the *sum* over pairs. That is reproduced rather than repaired: it is what every
+  MeshLab user's copy does, and the line search accepting a step by the max while moving along the
+  sum is part of the filter's actual behaviour. Its sliver-removal pass is one genuine repair —
+  upstream reads `faceAngles[-1]` there, which is undefined behaviour, so the corner it plainly
+  meant is used instead.
 - **Textured decimation guards the seams instead of extending the quadric.** MeshLab's
   `Quadric Edge Collapse Decimation (with texture)` carries a 5-dimensional quadric, weighting the
   UV coordinates against the geometry through its `Extratcoordw` parameter. Here the collapse keeps

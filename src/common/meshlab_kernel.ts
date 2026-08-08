@@ -22,6 +22,7 @@ import { FilterColorProc } from "../meshlabplugins/filter_colorproc/filter_color
 import { FilterCreate } from "../meshlabplugins/filter_create/filter_create.ts";
 import { FilterCreateIso } from "../meshlabplugins/filter_createiso/filter_createiso.ts";
 import { FilterCubization } from "../meshlabplugins/filter_cubization/filter_cubization.ts";
+import { FilterDevelopability } from "../meshlabplugins/filter_developability/filter_developability.ts";
 import { FilterDirt } from "../meshlabplugins/filter_dirt/filter_dirt.ts";
 import { FilterEmbree } from "../meshlabplugins/filter_embree/filter_embree.ts";
 import { FilterFractal } from "../meshlabplugins/filter_fractal/filter_fractal.ts";
@@ -82,6 +83,7 @@ const IMPLEMENTED_FILTER_PLUGINS: ReadonlyArray<() => FilterPlugin> = [
 	() => new FilterColorProjection(),
 	() => new FilterMeshAlphaWrap(),
 	() => new FilterCubization(),
+	() => new FilterDevelopability(),
 	() => new FilterQhull(),
 	() => new FilterEmbree(),
 	() => new FilterMeshBoolean(),
