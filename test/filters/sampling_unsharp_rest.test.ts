@@ -76,19 +76,39 @@ describe("Cut mesh along crease edges", () => {
 		const before = { vn: cm.vn, fn: cm.fn, volume: volumeOf(cm) };
 		kernel.applyFilter(doc, "Cut mesh along crease edges", { angleDeg: 45 });
 
-		// Every corner of a cube meets three mutually perpendicular faces, so a
-		// full cut gives 3 vertices per corner: 8 -> 24, one per face corner.
-		expect(cm.vn).toBe(24);
+		// Every corner meets three faces, so the cut needs 3 vertices per
+		// corner: 24 referenced. MeshLab allocates one *more* per corner — the
+		// crossing that closes each fan claims a vertex it never writes — and
+		// ships the orphan, so 8 -> 32 with 8 unreferenced vertices at the
+		// origin. The differential tests hold us to that number, wart and all.
+		expect(cm.vn).toBe(32);
+		const referenced = new Set<number>();
+		for (let f = 0; f < cm.faceSize; f++) {
+			if (cm.isFaceD(f)) continue;
+			for (let k = 0; k < 3; k++) referenced.add(cm.fv(f, k));
+		}
+		expect(referenced.size).toBe(24);
 		expect(cm.fn).toBe(before.fn);
 		// The shape is untouched. This is the invariant that matters.
 		expect(volumeOf(cm)).toBeCloseTo(before.volume, 9);
 	});
 
-	test("adds no position the mesh did not already have", () => {
+	test("adds no referenced position the mesh did not already have", () => {
+		// The 8 orphan vertices sit at the origin (allocated, never written) —
+		// upstream's artefact, reproduced. Referenced geometry stays a subset
+		// of what was there.
 		const { doc, cm } = docWith(cube(1).mesh);
 		const before = new Set(positionDigest(cm));
 		kernel.applyFilter(doc, "Cut mesh along crease edges", { angleDeg: 45 });
-		for (const p of positionDigest(cm)) expect(before.has(p)).toBe(true);
+		const referenced = new Set<number>();
+		for (let f = 0; f < cm.faceSize; f++) {
+			if (cm.isFaceD(f)) continue;
+			for (let k = 0; k < 3; k++) referenced.add(cm.fv(f, k));
+		}
+		for (const v of referenced) {
+			const key = `${cm.vx(v).toFixed(9)},${cm.vy(v).toFixed(9)},${cm.vz(v).toFixed(9)}`;
+			expect(before.has(key), key).toBe(true);
+		}
 	});
 
 	test("a threshold above every angle leaves the mesh alone", () => {
@@ -1108,6 +1128,6 @@ describe("registration", () => {
 			if (cm.isVertD(v)) continue;
 			expect((cm.vertFlags[v] & VertexFlag.DELETED) === 0).toBe(true);
 		}
-		expect(cm.vn).toBe(24);
+		expect(cm.vn).toBe(32); // 24 referenced + upstream's 8 orphans
 	});
 });

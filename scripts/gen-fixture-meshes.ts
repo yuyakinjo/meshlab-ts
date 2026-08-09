@@ -16,7 +16,13 @@ import { join } from "node:path";
 import { writePly } from "../src/meshlabplugins/io_base/ply.ts";
 import { Allocator } from "../src/vcg/complex/allocator.ts";
 import type { CMeshO } from "../src/vcg/complex/cmesho.ts";
-import { cube, nonManifoldEdgeFan, sphereIcosa, torus } from "../test/helpers/mesh_builders.ts";
+import {
+	cube,
+	gridPlane,
+	nonManifoldEdgeFan,
+	sphereIcosa,
+	torus,
+} from "../test/helpers/mesh_builders.ts";
 
 const meshes = join(import.meta.dir, "..", "test", "fixtures", "meshes");
 
@@ -63,3 +69,7 @@ save("sphere3.ply", sphereIcosa(3).mesh);
 
 // A fan of extra faces on one edge: the non-manifold repair case.
 save("fan.ply", nonManifoldEdgeFan(2).mesh);
+
+// An open sheet, for the cases where boundary handling is the behaviour under
+// test — smoothing borders, boundary-preserving decimation.
+save("plane.ply", gridPlane(6, 6).mesh);

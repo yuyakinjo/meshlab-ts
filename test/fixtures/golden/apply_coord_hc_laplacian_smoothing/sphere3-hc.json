@@ -1,0 +1,21 @@
+{
+  "compare": "equivalent",
+  "filter": "apply_coord_hc_laplacian_smoothing",
+  "input": "sphere3.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {},
+  "summary": {
+    "area": 12.22362995147705,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 1920,
+    "fn": 1280,
+    "genus": 0,
+    "geometryHash": "e6be59aaa1a5b1b3b83e790157f21600766730ad343d06b390a36648b11fefb7",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 642,
+    "volume": 4.012533164484213
+  }
+}

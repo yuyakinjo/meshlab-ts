@@ -653,13 +653,13 @@ export class FilterUnsharp extends FilterPlugin {
 			}
 
 			case FP.FP_HC_LAPLACIAN_SMOOTH:
-				Smooth.vertexCoordLaplacianHC(cm, 1, 0, 0.5, { smoothSelected });
+				Smooth.vertexCoordLaplacianHC(cm, 1, { smoothSelected });
 				doc.Log.log("Smoothed with HC Laplacian");
 				break;
 
 			case FP.FP_SD_LAPLACIAN_SMOOTH: {
 				const steps = params.getInt("stepSmoothNum");
-				Smooth.vertexCoordScaleDependentLaplacian(cm, steps, params.getFloat("delta"), {
+				Smooth.vertexCoordScaleDependentLaplacian(cm, steps, params.getAbsPerc("delta"), {
 					smoothSelected,
 				});
 				doc.Log.log(`Smoothed with ${steps} scale-dependent Laplacian steps`);

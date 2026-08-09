@@ -1,0 +1,25 @@
+{
+  "compare": "equivalent",
+  "filter": "apply_coord_taubin_smoothing",
+  "input": "plane.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "lambda": 0.5,
+    "mu": -0.53,
+    "stepSmoothNum": 6
+  },
+  "summary": {
+    "area": 1.0066115856170654,
+    "boundaryEdges": 24,
+    "boundaryLoops": 1,
+    "components": 1,
+    "en": 120,
+    "fn": 72,
+    "genus": 0,
+    "geometryHash": "f90889f3eb9ec47e12535ecb141b96779f346d4c667d2041e6cc01a57c9e1d91",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 49,
+    "volume": null
+  }
+}

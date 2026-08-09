@@ -1,0 +1,23 @@
+{
+  "compare": "exact",
+  "filter": "meshing_cut_along_crease_edges",
+  "input": "cube_binary.stl",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "angleDeg": 60.0
+  },
+  "summary": {
+    "area": 600.0,
+    "boundaryEdges": 24,
+    "boundaryLoops": 6,
+    "components": 6,
+    "en": 30,
+    "fn": 12,
+    "genus": 0,
+    "geometryHash": "044a9a10375e773da17030ef90315d2c9cfa11dacbb7663927220aeb375521f5",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 32,
+    "volume": null
+  }
+}

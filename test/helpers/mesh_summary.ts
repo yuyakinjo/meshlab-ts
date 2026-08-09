@@ -117,8 +117,18 @@ export function summarizeMesh(m: CMeshO): MeshSummary {
 	// PyMeshLab reports -1 for both when the mesh is not two-manifold, and the
 	// comparison must be like for like.
 	const boundaryLoops = manifold ? countHoles(m) : -1;
-	// χ = V − E + F over everything, then 2c = χ + 2g + b for the genus total.
-	const genus = manifold ? (2 * components - boundaryLoops - (m.vn - en + m.fn)) / 2 : -1;
+	// χ = V − E + F, then 2c = χ + 2g + b for the genus total. V counts only
+	// *referenced* vertices: MeshLab reports unreferenced ones in vn but keeps
+	// them out of the genus, and a crease cut legitimately leaves orphans
+	// behind — including them would assign a sphere of six cut faces genus -4.
+	const referenced = new Set<number>();
+	for (let f = 0; f < m.faceSize; f++) {
+		if (m.isFaceD(f)) continue;
+		for (let k = 0; k < 3; k++) referenced.add(m.fv(f, k));
+	}
+	const genus = manifold
+		? (2 * components - boundaryLoops - (referenced.size - en + m.fn)) / 2
+		: -1;
 
 	// --- geometry -------------------------------------------------------
 	let area = 0;

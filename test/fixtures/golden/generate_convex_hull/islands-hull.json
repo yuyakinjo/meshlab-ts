@@ -1,0 +1,21 @@
+{
+  "compare": "equivalent",
+  "filter": "generate_convex_hull",
+  "input": "islands.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {},
+  "summary": {
+    "area": 28.549718856811523,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 240,
+    "fn": 160,
+    "genus": 0,
+    "geometryHash": "a21c3eda4c5edede692d0f49719c453c69921d22e70414cf7460def736765bd2",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 82,
+    "volume": 10.12457349840571
+  }
+}

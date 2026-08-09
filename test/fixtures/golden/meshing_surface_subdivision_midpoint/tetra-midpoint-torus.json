@@ -1,0 +1,26 @@
+{
+  "compare": "exact",
+  "filter": "meshing_surface_subdivision_midpoint",
+  "input": "torus.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "Iterations": 1,
+    "Threshold": {
+      "abs": 0.0
+    }
+  },
+  "summary": {
+    "area": 46.50160217285156,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 3456,
+    "fn": 2304,
+    "genus": 1,
+    "geometryHash": "1a108c01e03ad3cd911cbc0b920afaeb9740f4a1ca72af53743101de20c317e5",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 1152,
+    "volume": 13.417179298114641
+  }
+}

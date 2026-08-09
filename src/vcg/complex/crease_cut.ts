@@ -131,24 +131,24 @@ export function cutMeshAlongSelectedFaceEdges(m: CMeshO): void {
 			}
 
 			let current = centre;
-			// Crossing a crease means the *next* wedge needs a fresh vertex —
-			// but only if there is a next wedge. Upstream allocates on the
-			// crossing itself, so a closed fan allocates one more than it uses:
-			// the final crease closes the loop and the counter has already moved
-			// on. That leaves an unreferenced vertex per cut corner, eight on a
-			// cube. Deferring the allocation to the moment a wedge is actually
-			// written costs nothing and leaves none.
-			let pending = false;
+			// Crossing a crease means the *next* wedge gets a fresh vertex, and
+			// the allocation happens on the crossing itself — exactly as
+			// upstream does it. On a closed fan the final crease closes the
+			// loop after the counter has already moved on, so every cut corner
+			// leaves one allocated-but-unreferenced vertex behind: eight on a
+			// cube. Deliberately reproduced. An earlier version deferred the
+			// allocation to the moment a wedge was written, which is tidier and
+			// leaves no orphans — and the differential tests flagged it,
+			// because real MeshLab ships the orphans (32 vertices on that cube,
+			// not 24) and a caller counting vertices sees the difference.
 			const walk = cur.clone();
 			do {
-				if (pending) {
-					current = newVertexCounter;
-					newVertexCounter++;
-					pending = false;
-				}
 				wedgeVert[3 * walk.f + cornerOf(m, walk)] = current;
 				walk.flipE();
-				if (isEdgeSelected(m, walk.f, walk.z)) pending = true;
+				if (isEdgeSelected(m, walk.f, walk.z)) {
+					current = newVertexCounter;
+					newVertexCounter++;
+				}
 				walk.flipF();
 			} while (!from.equals(walk) && !walk.isBorder());
 		}

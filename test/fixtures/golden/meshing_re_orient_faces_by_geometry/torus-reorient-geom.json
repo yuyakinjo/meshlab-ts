@@ -1,0 +1,21 @@
+{
+  "compare": "exact",
+  "filter": "meshing_re_orient_faces_by_geometry",
+  "input": "torus.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {},
+  "summary": {
+    "area": 46.50160217285156,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 864,
+    "fn": 576,
+    "genus": 1,
+    "geometryHash": "af797e077067ae3295e9bf096b150d17fea33f66dd28d1bee195e2b749538f8b",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 288,
+    "volume": 13.417179298114663
+  }
+}

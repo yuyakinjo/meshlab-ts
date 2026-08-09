@@ -1,0 +1,26 @@
+{
+  "compare": "loose",
+  "filter": "meshing_isotropic_explicit_remeshing",
+  "input": "sphere3.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "Iterations": 3,
+    "TargetLen": {
+      "abs": 0.15
+    }
+  },
+  "summary": {
+    "area": 12.499654769897461,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 1884,
+    "fn": 1256,
+    "genus": 0,
+    "geometryHash": "7e4a8d6b3c16211de91e01ad0852bcb5e9e294a86e7d48045c04a3c3518cfceb",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 630,
+    "volume": 4.149272282363498
+  }
+}

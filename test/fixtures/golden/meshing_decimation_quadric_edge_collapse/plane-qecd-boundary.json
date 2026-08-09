@@ -1,0 +1,24 @@
+{
+  "compare": "loose",
+  "filter": "meshing_decimation_quadric_edge_collapse",
+  "input": "plane.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "PreserveBoundary": true,
+    "TargetFaceNum": 30
+  },
+  "summary": {
+    "area": 1.0,
+    "boundaryEdges": 24,
+    "boundaryLoops": 1,
+    "components": 1,
+    "en": 57,
+    "fn": 30,
+    "genus": 0,
+    "geometryHash": "e1e2ebc1e68f764c824daa2ac564ab5e88f494e198e249ee6d9bbee968309cdc",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 28,
+    "volume": null
+  }
+}

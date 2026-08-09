@@ -197,6 +197,37 @@ export function quadricSimplification(m: CMeshO, options: DecimateOptions): Deci
 
 	// ---- the collapse loop -------------------------------------------------
 	let performed = 0;
+	// VCG's PreserveBoundary: boundary vertices lose their writable flag, so
+	// no collapse may move or delete them — a hard lock, not a penalty. The
+	// boundary constraint planes above exist independently of this.
+	let locked: Set<number> | null = null;
+	if (p.preserveBoundary) {
+		locked = new Set<number>();
+		const uses = new Map<number, number>();
+		const stride = m.vertSize + 1;
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			for (let e = 0; e < 3; e++) {
+				const a = m.faceVert[3 * f + e];
+				const b = m.faceVert[3 * f + ((e + 1) % 3)];
+				const k = a < b ? a * stride + b : b * stride + a;
+				uses.set(k, (uses.get(k) ?? 0) + 1);
+			}
+		}
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			for (let e = 0; e < 3; e++) {
+				const a = m.faceVert[3 * f + e];
+				const b = m.faceVert[3 * f + ((e + 1) % 3)];
+				const k = a < b ? a * stride + b : b * stride + a;
+				if (uses.get(k) === 1) {
+					locked.add(a);
+					locked.add(b);
+				}
+			}
+		}
+	}
+
 	let discarded = 0;
 	let reason: OptimizationResult["reason"] = "exhausted";
 	const startFaces = m.fn;
@@ -216,6 +247,10 @@ export function quadricSimplification(m: CMeshO, options: DecimateOptions): Deci
 			continue;
 		}
 		if (options.canCollapse !== undefined && !options.canCollapse(entry.u, entry.v)) {
+			discarded++;
+			continue;
+		}
+		if (locked !== null && (locked.has(entry.u) || locked.has(entry.v))) {
 			discarded++;
 			continue;
 		}
@@ -338,8 +373,14 @@ function initQuadrics(m: CMeshO, quadrics: Float64Array, p: QuadricParameters): 
 			const p0 = m.faceVert[3 * f + e];
 			const p1 = m.faceVert[3 * f + ((e + 1) % 3)];
 			const isBorder = (edgeUses.get(key(p0, p1)) ?? 0) === 1;
-			const wantBoundary = p.preserveBoundary && isBorder;
-			if (!wantBoundary && !p.qualityQuadric) continue;
+			// Border planes are unconditional in VCG — every border edge gets its
+			// perpendicular constraint plane, amplified by the boundary weight,
+			// whether or not the boundary is being *preserved*. PreserveBoundary
+			// is a different mechanism entirely: it locks the boundary vertices
+			// so no collapse can touch them (see below). Gating the planes on it
+			// was the incompatibility the differential tests measured as a
+			// boundary that shrank more than MeshLab's.
+			if (!isBorder && !p.qualityQuadric) continue;
 
 			// A plane through the edge, perpendicular to the face.
 			let ex = m.vx(p1) - m.vx(p0);
@@ -361,7 +402,7 @@ function initQuadrics(m: CMeshO, quadrics: Float64Array, p: QuadricParameters): 
 			const pd = -(px * m.vx(p0) + py * m.vy(p0) + pz * m.vz(p0));
 
 			const weight =
-				(wantBoundary ? p.boundaryQuadricWeight : p.qualityQuadricWeight) * (p.useArea ? area : 1);
+				(isBorder ? p.boundaryQuadricWeight : p.qualityQuadricWeight) * (p.useArea ? area : 1);
 			quadricAddPlane(quadrics, p0, px, py, pz, pd, weight);
 			quadricAddPlane(quadrics, p1, px, py, pz, pd, weight);
 		}

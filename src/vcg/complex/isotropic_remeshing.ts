@@ -258,6 +258,16 @@ function collapseShortEdges(m: CMeshO, options: RemeshOptions, ref: Reference | 
 		if (options.selectedOnly && !m.isFaceS(f)) continue;
 		for (let e = 0; e < 3; e++) {
 			if (m.isFaceD(f)) break;
+			// VCG splits an edge only when the faces on BOTH sides are selected
+			// (a mesh border counts, because FFp points back at the face
+			// itself). An edge on the selection's rim stays whole — which is
+			// what keeps a refined patch from leaking into its surroundings,
+			// and what makes refining a single-triangle cap a no-op, exactly
+			// as MeshLab has it.
+			if (options.selectedOnly) {
+				const g = m.ffp(f, e);
+				if (!m.isFaceD(g) && !m.isFaceS(g)) continue;
+			}
 			const u = m.faceVert[3 * f + e];
 			const v = m.faceVert[3 * f + ((e + 1) % 3)];
 			if (u === v || m.isVertD(u) || m.isVertD(v)) continue;
@@ -566,9 +576,18 @@ function tangentialRelaxation(m: CMeshO, options: RemeshOptions, ref: Reference 
 	for (let v = 0; v < m.vertSize; v++) {
 		if (m.isVertD(v) || boundary[v] || crease[v]) continue;
 		if (options.selectedOnly) {
-			let anySelected = false;
-			for (const f of vertFaces[v]) if (!m.isFaceD(f) && m.isFaceS(f)) anySelected = true;
-			if (!anySelected) continue;
+			// VCG marks the selection's vertices and then strips any that also
+			// belong to an unselected face — so only the strict interior of the
+			// selection moves. A vertex on the rim is shared with faces nobody
+			// asked to change.
+			let allFacesSelected = vertFaces[v].size > 0;
+			for (const f of vertFaces[v]) {
+				if (!m.isFaceD(f) && !m.isFaceS(f)) {
+					allFacesSelected = false;
+					break;
+				}
+			}
+			if (!allFacesSelected) continue;
 		}
 		let sx = 0;
 		let sy = 0;

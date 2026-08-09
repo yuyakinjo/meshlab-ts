@@ -33,63 +33,6 @@ function newAccumulator(n: number): LaplacianAccumulator {
 	return { sum: new Float64Array(3 * n), count: new Float64Array(n) };
 }
 
-/**
- * Accumulates each vertex's neighbours.
- *
- * With `cotangentWeight` the contributions are weighted by the cotangents of
- * the opposite angles, which makes the result depend on the surface rather
- * than on how it happens to be triangulated — a long thin triangle should not
- * pull harder just because it is long.
- */
-function accumulate(m: CMeshO, acc: LaplacianAccumulator, cotangentWeight: boolean): void {
-	acc.sum.fill(0);
-	acc.count.fill(0);
-
-	for (let f = 0; f < m.faceSize; f++) {
-		if (m.isFaceD(f)) continue;
-		for (let e = 0; e < 3; e++) {
-			const a = m.faceVert[3 * f + e];
-			const b = m.faceVert[3 * f + ((e + 1) % 3)];
-
-			let w = 1;
-			if (cotangentWeight) {
-				// The angle at the vertex opposite this edge.
-				const c = m.faceVert[3 * f + ((e + 2) % 3)];
-				const ux = m.vx(a) - m.vx(c);
-				const uy = m.vy(a) - m.vy(c);
-				const uz = m.vz(a) - m.vz(c);
-				const vx = m.vx(b) - m.vx(c);
-				const vy = m.vy(b) - m.vy(c);
-				const vz = m.vz(b) - m.vz(c);
-				const dot = ux * vx + uy * vy + uz * vz;
-				const crossX = uy * vz - uz * vy;
-				const crossY = uz * vx - ux * vz;
-				const crossZ = ux * vy - uy * vx;
-				const crossLen = Math.hypot(crossX, crossY, crossZ);
-				// cot = cos/sin. A degenerate corner has no angle to speak of,
-				// so it contributes nothing rather than an infinity.
-				if (crossLen < 1e-300) continue;
-				w = dot / crossLen;
-				// Obtuse corners give a negative cotangent, which can pull a
-				// vertex the wrong way and blow the smoothing up. Clamping is
-				// the standard remedy.
-				if (!Number.isFinite(w)) continue;
-				if (w < 0) w = 0;
-			}
-
-			acc.sum[3 * a] += m.vx(b) * w;
-			acc.sum[3 * a + 1] += m.vy(b) * w;
-			acc.sum[3 * a + 2] += m.vz(b) * w;
-			acc.count[a] += w;
-
-			acc.sum[3 * b] += m.vx(a) * w;
-			acc.sum[3 * b + 1] += m.vy(a) * w;
-			acc.sum[3 * b + 2] += m.vz(a) * w;
-			acc.count[b] += w;
-		}
-	}
-}
-
 /** Which face edges are borders, one bit per face corner, or null for none. */
 function borderEdgesOf(m: CMeshO): Uint8Array {
 	const flags = new Uint8Array(3 * m.faceSize);
@@ -231,33 +174,6 @@ export interface SmoothOptions {
 	readonly boundary?: boolean;
 }
 
-/** One Laplacian step scaled by `delta`, into the mesh. */
-function laplacianStep(
-	m: CMeshO,
-	acc: LaplacianAccumulator,
-	delta: number,
-	options: SmoothOptions,
-	borderMask: Uint8Array | null,
-): void {
-	accumulate(m, acc, options.cotangentWeight ?? false);
-	for (let v = 0; v < m.vertSize; v++) {
-		if (m.isVertD(v)) continue;
-		if (options.smoothSelected === true && !m.isVertS(v)) continue;
-		if (borderMask !== null && borderMask[v] === 1) continue;
-		const n = acc.count[v];
-		if (n === 0) continue;
-		const tx = acc.sum[3 * v] / n;
-		const ty = acc.sum[3 * v + 1] / n;
-		const tz = acc.sum[3 * v + 2] / n;
-		m.setVert(
-			v,
-			m.vx(v) + delta * (tx - m.vx(v)),
-			m.vy(v) + delta * (ty - m.vy(v)),
-			m.vz(v) + delta * (tz - m.vz(v)),
-		);
-	}
-}
-
 /** Which vertices to hold fixed, or null when none. */
 function borderMaskOf(m: CMeshO, options: SmoothOptions): Uint8Array | null {
 	if (options.pinBoundary !== true) return null;
@@ -351,121 +267,175 @@ export function vertexCoordTaubin(
 }
 
 /**
- * Humphrey's Classes smoothing: Laplacian, then a correction pulling each
- * vertex back toward where it and its neighbours started.
+ * Humphrey's Classes smoothing — `vcg::tri::Smooth::VertexCoordLaplacianHC`,
+ * pass for pass.
  *
- * `alpha` weights the original position, `beta` the neighbours' displacement.
- * Corrects the shrinking explicitly rather than by cancellation.
+ * One Laplacian step, then a correction that backs out the average of the
+ * neighbourhood's displacements, with beta fixed at 0.5 as VCG fixes it.
+ * Border edges are counted twice in both accumulations — VCG's way of giving
+ * the boundary curve more say over its own vertices — and MeshLab always
+ * calls this with a single step.
  */
-export function vertexCoordLaplacianHC(
-	m: CMeshO,
-	step = 1,
-	alpha = 0,
-	beta = 0.5,
-	options: SmoothOptions = {},
-): void {
+export function vertexCoordLaplacianHC(m: CMeshO, step = 1, options: SmoothOptions = {}): void {
 	if (m.vn === 0) return;
-	const acc = newAccumulator(m.vertSize);
-	const border = borderMaskOf(m, options);
-	const original = new Float64Array(m.vertCoord.subarray(0, 3 * m.vertSize));
-	const displacement = new Float64Array(3 * m.vertSize);
+	const beta = 0.5;
+	const borderEdges = borderEdgesOf(m);
+	const laplacian = new Float64Array(3 * m.vertSize);
+	const count = new Float64Array(m.vertSize);
+	const dif = new Float64Array(3 * m.vertSize);
 
 	for (let i = 0; i < step; i++) {
-		const before = new Float64Array(m.vertCoord.subarray(0, 3 * m.vertSize));
-		laplacianStep(m, acc, 1, options, border);
+		laplacian.fill(0);
+		count.fill(0);
+		dif.fill(0);
 
-		// How far each vertex moved, blended against how far it has drifted
-		// from where it began.
-		for (let v = 0; v < m.vertSize; v++) {
-			if (m.isVertD(v)) continue;
-			for (let k = 0; k < 3; k++) {
-				const o = 3 * v + k;
-				displacement[o] = m.vertCoord[o] - (alpha * original[o] + (1 - alpha) * before[o]);
-			}
-		}
-
-		// Average each vertex's neighbours' displacement, and back it out.
-		accumulate(m, acc, false);
-		const dAcc = newAccumulator(m.vertSize);
 		for (let f = 0; f < m.faceSize; f++) {
 			if (m.isFaceD(f)) continue;
 			for (let e = 0; e < 3; e++) {
 				const a = m.faceVert[3 * f + e];
 				const b = m.faceVert[3 * f + ((e + 1) % 3)];
-				for (let k = 0; k < 3; k++) {
-					dAcc.sum[3 * a + k] += displacement[3 * b + k];
-					dAcc.sum[3 * b + k] += displacement[3 * a + k];
+				// A border edge is seen from one face only, so it is added twice
+				// there — the same weight an interior edge gets from its two faces.
+				const times = borderEdges[3 * f + e] === 1 ? 2 : 1;
+				for (let t = 0; t < times; t++) {
+					laplacian[3 * a] += m.vx(b);
+					laplacian[3 * a + 1] += m.vy(b);
+					laplacian[3 * a + 2] += m.vz(b);
+					count[a]++;
+					laplacian[3 * b] += m.vx(a);
+					laplacian[3 * b + 1] += m.vy(a);
+					laplacian[3 * b + 2] += m.vz(a);
+					count[b]++;
 				}
-				dAcc.count[a]++;
-				dAcc.count[b]++;
+			}
+		}
+		for (let v = 0; v < m.vertSize; v++) {
+			if (m.isVertD(v) || count[v] === 0) continue;
+			laplacian[3 * v] /= count[v];
+			laplacian[3 * v + 1] /= count[v];
+			laplacian[3 * v + 2] /= count[v];
+		}
+
+		// Each vertex collects how far its neighbours' Laplacian positions sit
+		// from where those neighbours actually are.
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			for (let e = 0; e < 3; e++) {
+				const a = m.faceVert[3 * f + e];
+				const b = m.faceVert[3 * f + ((e + 1) % 3)];
+				const times = borderEdges[3 * f + e] === 1 ? 2 : 1;
+				for (let t = 0; t < times; t++) {
+					dif[3 * a] += laplacian[3 * b] - m.vx(b);
+					dif[3 * a + 1] += laplacian[3 * b + 1] - m.vy(b);
+					dif[3 * a + 2] += laplacian[3 * b + 2] - m.vz(b);
+					dif[3 * b] += laplacian[3 * a] - m.vx(a);
+					dif[3 * b + 1] += laplacian[3 * a + 1] - m.vy(a);
+					dif[3 * b + 2] += laplacian[3 * a + 2] - m.vz(a);
+				}
 			}
 		}
 
 		for (let v = 0; v < m.vertSize; v++) {
-			if (m.isVertD(v)) continue;
+			if (m.isVertD(v) || count[v] === 0) continue;
 			if (options.smoothSelected === true && !m.isVertS(v)) continue;
-			if (border !== null && border[v] === 1) continue;
-			const n = dAcc.count[v];
-			if (n === 0) continue;
-			for (let k = 0; k < 3; k++) {
-				const o = 3 * v + k;
-				m.vertCoord[o] -= beta * displacement[o] + ((1 - beta) * dAcc.sum[o]) / n;
-			}
+			const n = count[v];
+			m.setVert(
+				v,
+				laplacian[3 * v] - (laplacian[3 * v] - m.vx(v)) * beta + (dif[3 * v] / n) * (1 - beta),
+				laplacian[3 * v + 1] -
+					(laplacian[3 * v + 1] - m.vy(v)) * beta +
+					(dif[3 * v + 1] / n) * (1 - beta),
+				laplacian[3 * v + 2] -
+					(laplacian[3 * v + 2] - m.vz(v)) * beta +
+					(dif[3 * v + 2] / n) * (1 - beta),
+			);
 		}
 	}
 	m.imark++;
 }
 
 /**
- * Scale-dependent Laplacian (Desbrun): each neighbour's pull is divided by its
- * edge length, so the step is in proportion to the local feature size rather
- * than to how densely the surface happens to be sampled.
+ * Fujiwara's scale-dependent Laplacian —
+ * `vcg::tri::Smooth::VertexCoordScaleDependentLaplacian_Fujiwara`.
  *
- * `delta` is the step size; it has units of length squared over time, so it
- * must be scaled to the mesh.
+ * Each vertex moves by `delta * Σ(normalized edges) / Σ(edge lengths)`: the
+ * direction is the plain umbrella, but dividing by total edge length makes
+ * short-edged regions move less, which is what keeps fine detail from being
+ * steamrolled at the same delta that flattens coarse noise.
+ *
+ * VCG resets boundary vertices and re-accumulates them along the border curve
+ * alone — but MeshLab's filter clears the border flags before calling (its
+ * own comment says "Small hack"), so in the shipped behaviour every edge is
+ * treated as interior. `useBorderLogic` keeps both reachable, with MeshLab's
+ * shipped path as the filter's choice.
  */
 export function vertexCoordScaleDependentLaplacian(
 	m: CMeshO,
 	step = 1,
 	delta = 0.001,
-	options: SmoothOptions = {},
+	options: SmoothOptions & { useBorderLogic?: boolean } = {},
 ): void {
 	if (m.vn === 0) return;
-	const border = borderMaskOf(m, options);
-	const acc = newAccumulator(m.vertSize);
+	const borderEdges =
+		(options.useBorderLogic ?? false) ? borderEdgesOf(m) : new Uint8Array(3 * m.faceSize);
+	const pointSum = new Float64Array(3 * m.vertSize);
+	const lengthSum = new Float64Array(m.vertSize);
+
+	const addEdge = (a: number, b: number): void => {
+		const ex = m.vx(b) - m.vx(a);
+		const ey = m.vy(b) - m.vy(a);
+		const ez = m.vz(b) - m.vz(a);
+		const len = Math.hypot(ex, ey, ez);
+		if (len === 0) return;
+		pointSum[3 * a] += ex / len;
+		pointSum[3 * a + 1] += ey / len;
+		pointSum[3 * a + 2] += ez / len;
+		pointSum[3 * b] -= ex / len;
+		pointSum[3 * b + 1] -= ey / len;
+		pointSum[3 * b + 2] -= ez / len;
+		lengthSum[a] += len;
+		lengthSum[b] += len;
+	};
 
 	for (let i = 0; i < step; i++) {
-		acc.sum.fill(0);
-		acc.count.fill(0);
+		pointSum.fill(0);
+		lengthSum.fill(0);
 		for (let f = 0; f < m.faceSize; f++) {
 			if (m.isFaceD(f)) continue;
 			for (let e = 0; e < 3; e++) {
-				const a = m.faceVert[3 * f + e];
-				const b = m.faceVert[3 * f + ((e + 1) % 3)];
-				const len = Math.hypot(m.vx(b) - m.vx(a), m.vy(b) - m.vy(a), m.vz(b) - m.vz(a));
-				if (len === 0) continue;
-				const w = 1 / len;
-				acc.sum[3 * a] += (m.vx(b) - m.vx(a)) * w;
-				acc.sum[3 * a + 1] += (m.vy(b) - m.vy(a)) * w;
-				acc.sum[3 * a + 2] += (m.vz(b) - m.vz(a)) * w;
-				acc.count[a] += w;
-				acc.sum[3 * b] += (m.vx(a) - m.vx(b)) * w;
-				acc.sum[3 * b + 1] += (m.vy(a) - m.vy(b)) * w;
-				acc.sum[3 * b + 2] += (m.vz(a) - m.vz(b)) * w;
-				acc.count[b] += w;
+				if (borderEdges[3 * f + e] === 1) continue;
+				addEdge(m.faceVert[3 * f + e], m.faceVert[3 * f + ((e + 1) % 3)]);
 			}
 		}
+		// Boundary vertices start over and average along the border curve only.
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			for (let e = 0; e < 3; e++) {
+				if (borderEdges[3 * f + e] !== 1) continue;
+				for (const v of [m.faceVert[3 * f + e], m.faceVert[3 * f + ((e + 1) % 3)]]) {
+					pointSum[3 * v] = 0;
+					pointSum[3 * v + 1] = 0;
+					pointSum[3 * v + 2] = 0;
+					lengthSum[v] = 0;
+				}
+			}
+		}
+		for (let f = 0; f < m.faceSize; f++) {
+			if (m.isFaceD(f)) continue;
+			for (let e = 0; e < 3; e++) {
+				if (borderEdges[3 * f + e] !== 1) continue;
+				addEdge(m.faceVert[3 * f + e], m.faceVert[3 * f + ((e + 1) % 3)]);
+			}
+		}
+
 		for (let v = 0; v < m.vertSize; v++) {
-			if (m.isVertD(v)) continue;
+			if (m.isVertD(v) || lengthSum[v] <= 0) continue;
 			if (options.smoothSelected === true && !m.isVertS(v)) continue;
-			if (border !== null && border[v] === 1) continue;
-			const n = acc.count[v];
-			if (n === 0) continue;
 			m.setVert(
 				v,
-				m.vx(v) + (delta * acc.sum[3 * v]) / n,
-				m.vy(v) + (delta * acc.sum[3 * v + 1]) / n,
-				m.vz(v) + (delta * acc.sum[3 * v + 2]) / n,
+				m.vx(v) + (pointSum[3 * v] / lengthSum[v]) * delta,
+				m.vy(v) + (pointSum[3 * v + 1] / lengthSum[v]) * delta,
+				m.vz(v) + (pointSum[3 * v + 2] / lengthSum[v]) * delta,
 			);
 		}
 	}

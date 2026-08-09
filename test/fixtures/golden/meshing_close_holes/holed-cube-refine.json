@@ -1,0 +1,27 @@
+{
+  "compare": "loose",
+  "filter": "meshing_close_holes",
+  "input": "cube_with_holes.stl",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "MaxHoleSize": 30,
+    "RefineHole": true,
+    "RefineHoleEdgeLen": {
+      "abs": 0.3
+    }
+  },
+  "summary": {
+    "area": 6.0,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 18,
+    "fn": 12,
+    "genus": 0,
+    "geometryHash": "4f0b21ef75ed9cb2af9cf4ccc91d489895987909cc0180597e4dd728450b6169",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 8,
+    "volume": 1.0
+  }
+}

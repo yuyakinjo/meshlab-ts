@@ -1,0 +1,24 @@
+{
+  "compare": "exact",
+  "filter": "apply_matrix_flip_or_swap_axis",
+  "input": "torus.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "flipX": true,
+    "swapYZ": true
+  },
+  "summary": {
+    "area": 46.50160217285156,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 864,
+    "fn": 576,
+    "genus": 1,
+    "geometryHash": "d213698bf008900d851ed80dbf8838d042e078043f25bf3f70bd07a7a9ddfcf9",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 288,
+    "volume": 13.41717929811466
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "compare": "exact",
+  "filter": "compute_matrix_from_translation_rotation_scale",
+  "input": "torus.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "rotationZ": 30.0,
+    "scaleX": 1.5,
+    "scaleY": 1.5,
+    "scaleZ": 1.5,
+    "translationX": 0.5
+  },
+  "summary": {
+    "area": 104.62860870361328,
+    "boundaryEdges": 0,
+    "boundaryLoops": 0,
+    "components": 1,
+    "en": 864,
+    "fn": 576,
+    "genus": 1,
+    "geometryHash": "1a31c824cd1185c9dc18d54533db8eecc1b6b072b7794620fb839214e11ece60",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 288,
+    "volume": 45.282980131137045
+  }
+}

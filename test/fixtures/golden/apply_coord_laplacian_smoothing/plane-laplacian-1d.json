@@ -1,0 +1,25 @@
+{
+  "compare": "equivalent",
+  "filter": "apply_coord_laplacian_smoothing",
+  "input": "plane.ply",
+  "meshlabVersion": "2025.7.post1",
+  "params": {
+    "Boundary": true,
+    "cotangentWeight": false,
+    "stepSmoothNum": 5
+  },
+  "summary": {
+    "area": 0.8613331913948059,
+    "boundaryEdges": 24,
+    "boundaryLoops": 1,
+    "components": 1,
+    "en": 120,
+    "fn": 72,
+    "genus": 0,
+    "geometryHash": "fec03c5f98674d7964c35bda8d27d35e8f681099906f3bd533a18afb3fff0337",
+    "nonManifoldEdges": 0,
+    "nonManifoldVertices": 0,
+    "vn": 49,
+    "volume": null
+  }
+}
