@@ -244,7 +244,9 @@ export function readAgisoftXml(text: string): AgisoftImport {
 	for (const block of matchAll(text, /<camera\b([^>]*)>([\s\S]*?)<\/camera>/g)) {
 		const label = unescapeXml(attr(block[1], "label") ?? "");
 		const sensorId = Number(attr(block[1], "sensor_id") ?? 0);
-		const transform = /<transform>([\s\S]*?)<\/transform>/.exec(block[2]);
+		// [^<]* rather than a lazy [\s\S]*? — the content is only numbers and
+		// whitespace, and the lazy scan is quadratic when the close tag is absent.
+		const transform = /<transform>([^<]*)<\/transform>/.exec(block[2]);
 		if (transform === null) continue;
 		const v = numbers(transform[1]);
 		if (v.length < 12) {
