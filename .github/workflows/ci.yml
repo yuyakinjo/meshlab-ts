@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 # The golden-fixture regeneration script talks to Docker and a real pymeshlab.
 # It must never run here; scripts/regen-golden.ts refuses to start unless this
 # is set, and CI deliberately never sets it.
