@@ -27,7 +27,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The same gate as CI, run again here: a release tag is not a reason to
       # skip the checks, it is the reason to run them.
@@ -60,7 +60,7 @@ jobs:
       # the placeholder is sent and the registry answers 404. Trusted
       # publishing wants no token configured anywhere; npm then falls through
       # to the OIDC exchange on its own.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm install -g npm@latest
