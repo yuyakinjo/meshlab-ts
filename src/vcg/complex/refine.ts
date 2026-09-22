@@ -44,7 +44,8 @@ interface SplitRule {
 	readonly edge: ReadonlyArray<readonly [number, number, number]>;
 }
 
-// biome-ignore format: one row per split mask, as the C++ table is laid out
+// one row per split mask, as the C++ table is laid out
+// oxfmt-ignore
 const SPLIT_TAB: readonly SplitRule[] = [
 	/* --- */ { count: 1, tri: [[0, 1, 2]],                              swap: [[0, 0], [0, 0]], edge: [[0, 1, 2]] },
 	/* 01  */ { count: 2, tri: [[0, 3, 2], [3, 1, 2]],                   swap: [[0, 0], [0, 0]], edge: [[0, 3, 2], [0, 1, 3]] },

@@ -37,7 +37,8 @@ function build(coords: readonly number[], faces: readonly number[]): CMeshO {
 }
 
 export function tetrahedron(): CMeshO {
-	// biome-ignore format: one vertex, then one face, per group
+	// one vertex, then one face, per group
+	// oxfmt-ignore
 	return build(
 		[1, 1, 1,   -1, 1, -1,   -1, -1, 1,   1, -1, -1],
 		[0, 1, 2,   0, 2, 3,   0, 3, 1,   3, 2, 1],
@@ -45,7 +46,8 @@ export function tetrahedron(): CMeshO {
 }
 
 export function octahedron(): CMeshO {
-	// biome-ignore format: one vertex, then one face, per group
+	// one vertex, then one face, per group
+	// oxfmt-ignore
 	return build(
 		[1, 0, 0,   0, 1, 0,   0, 0, 1,   -1, 0, 0,   0, -1, 0,   0, 0, -1],
 		[
@@ -57,7 +59,8 @@ export function octahedron(): CMeshO {
 
 export function icosahedron(): CMeshO {
 	const L = (Math.sqrt(5) + 1) / 2;
-	// biome-ignore format: laid out one vertex, then one face, per line
+	// laid out one vertex, then one face, per line
+	// oxfmt-ignore
 	return build(
 		[
 			0, L, 1,   0, L, -1,   0, -L, 1,   0, -L, -1,
@@ -95,7 +98,8 @@ function dodecahedronCoords(): number[] {
 	const a = 1 / Math.sqrt(3);
 	const b = a / phi;
 	const c = a * phi;
-	// biome-ignore format: one vertex per column group, as the three families of coordinates
+	// one vertex per column group, as the three families of coordinates
+	// oxfmt-ignore
 	return [
 		a, a, a,     a, a, -a,    a, -a, a,    a, -a, -a,
 		-a, a, a,    -a, a, -a,   -a, -a, a,   -a, -a, -a,
@@ -161,7 +165,8 @@ export function box(
 			for (let x = 0; x < 2; x++) coords.push(...c(x, y, z));
 		}
 	}
-	// biome-ignore format: two triangles per line, one line per face of the box
+	// two triangles per line, one line per face of the box
+	// oxfmt-ignore
 	return build(coords, [
 		2, 1, 0,   1, 2, 3,
 		4, 2, 0,   2, 4, 6,

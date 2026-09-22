@@ -1,0 +1,41 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc"],
+	"categories": {
+		"correctness": "error"
+	},
+	"rules": {
+		"typescript/no-explicit-any": "error",
+		// Non-null assertions are used deliberately where the C++ source guarantees the invariant.
+		"typescript/no-non-null-assertion": "off",
+		// `new Array(n).fill(x)` is the allocation shape this kernel code wants; the suggested
+		// `Array.from({ length: n })` is slower and no clearer here.
+		"unicorn/no-new-array": "off",
+		// Several spreads here are deliberate defensive copies taken before the source is mutated
+		// during iteration (see edge_ops.ts); removing them would be a correctness bug.
+		"unicorn/no-useless-spread": "off"
+	},
+	"ignorePatterns": [".reference", "test/fixtures/golden", "dist"],
+	"overrides": [
+		{
+			"files": ["src/vcg/**", "src/common/**", "src/meshlabplugins/**"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "../complex/cursor.ts",
+								"message": "cursor.ts allocates per element and is for tests/CLI only; use index-based accessors in kernel code."
+							},
+							{
+								"name": "../../vcg/complex/cursor.ts",
+								"message": "cursor.ts allocates per element and is for tests/CLI only; use index-based accessors in kernel code."
+							}
+						]
+					}
+				]
+			}
+		}
+	]
+}
