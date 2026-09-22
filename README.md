@@ -1,6 +1,6 @@
 # meshlab-ts
 
-[![npm version](https://img.shields.io/npm/v/meshlab-ts?logo=npm&color=cb3837)](https://www.npmjs.com/package/meshlab-ts)
+[![npm version](https://img.shields.io/npm/v/meshlab-ts?logo=npm)](https://www.npmjs.com/package/meshlab-ts)
 
 A from-scratch TypeScript port of [MeshLab](https://github.com/cnr-isti-vclab/meshlab), running on
 [Bun](https://bun.sh) with zero runtime dependencies.
